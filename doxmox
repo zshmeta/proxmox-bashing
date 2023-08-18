@@ -1,0 +1,1797 @@
+#!/bin/bash
+
+# Check if each dependency is installed
+
+RED="\e[31m"
+GREEN="\e[32m"
+YELLOW="\e[33m"
+PASSWORD="25333"
+
+for arg in "$@"; do
+  if [ "$arg" == "-v" ]; then
+    VERB="true"
+    set -x
+fi
+done
+
+msg_info() {
+  echo -e "┅>>👍⌛ $1"
+}
+
+msg_error() {
+  echo -e "┅>> ${RED}🧯✗ $1"
+}
+
+msg_ok() {
+  echo -e "┅>> ${GREEN}👍👍✓ $1"
+}
+
+msg_warn() {
+  echo -e "┅>> ${YELLOW}📍⚠  $1"
+}
+
+header(){
+  toilet --metal --termwidth  --font pagga "   $1"
+}
+message(){
+  toilet --metal --termwidth  --font pagga "            $1"
+}
+
+error_handler() {
+  local exit_code="$?"
+  local line_number="$1"
+  local command="$2"
+  local cmd_error
+  cmd_error=$(history | tail -n1 | sed -e 's/^[ ]*[0-9]*[ ]*//g')
+  cmd_error=$(history | tail -n1 | sed -e 's/^[ ]*[0-9]*[ ]*//g')
+  local error_message="[ERROR] \nError msg: $cmd_error \nin line $line_number: \nexit code $exit_code: \nwhile executing command $command"
+  msg_error "\n$error_message"
+
+  # Ask the user if they want to continue or re-run the commands
+    while true; do
+      read -r -p "An error occurred. Do you want to continue (c), re-run the commands (r) or enter a shell (s)? " crs
+      case $crs in
+      [Cc]*) break ;;
+      [Rr]*)
+        # Rerun the last command.
+        # Note: This is a bit risky as it might not always produce the desired results depending on the context.
+        eval "$cmd_error"
+        ;;
+      [Ss]*)
+        # Provide a shell
+        msg_info "Dropping to a shell for troubleshooting. Type 'exit' to continue the script."
+        bash
+        ;;
+      [Ee]*)
+        # Exit the script
+        cleanup_exit
+        ;;
+      *) msg_info "Please answer continue (c), re-run (r), enter a shell (s), or exit the script (e)." ;;
+      esac
+    done
+}
+
+
+trap 'error_handler $cmd_error $LINENO "$BASH_COMMAND"' ERR
+
+cleanup_exit() {
+  msg_info "Cleaning up..."
+  # Remove the temporary directory
+  if ! pct stop "$CTID"; then
+    msg_error "Failed to stop container $CTID"
+  else
+    msg_info "Container $CTID stopped successfully."
+  fi
+  read -r -p "Do you want to delete the container $CTID? (yes/no): " delete_container
+  delete_container=${delete_container:-"yes"}
+  if [ "$delete_container" == no ]; then
+    msg_info "Skipping container deletion..."
+
+  else
+    msg_info "Deleting container $CTID..."
+  fi
+  if ! pct destroy "$CTID"; then
+    msg_error "Failed to delete container $CTID"
+  else
+    msg_info "Container $CTID deleted successfully."
+  fi
+
+  if ! rm -rf /etc/pve/lxc/"$CTID".conf; then
+    msg_error "pve/lxc/$CTID.conf might not exist"
+  fi
+
+  msg_info "Cleaned up successfully."
+
+}
+
+press_to_pause() {
+  local delay=0.15
+  local prompt="Press any key to Pause..."
+  key_pressed=
+  # Display the prompt immediately
+  echo "$prompt"
+
+  local countdown="1.....2.....3.....4.....5 wokay!"
+
+  # Display the countdown character by character with a delay
+  for ((i = 0; i < ${#countdown}; i++)); do
+    echo -n "${countdown:$i:1}"
+    read -r -s -n 1 -t $delay
+    # shellcheck disable=SC2181
+    if [ $? -eq 0 ]; then
+      key_pressed="true"
+      break
+    fi
+  done
+  echo
+
+  if [ "${key_pressed}" ]; then
+    return 0
+  else
+
+    return 1
+  fi
+}
+
+missing_dep() {
+
+  msg_info "Checking dependencies..."
+
+  # List of dependencies to check
+  missing_dep=()
+  for dep in "podman" "jq" "curl" "lolcrab" "figlet" "fzf"; do
+    if ! command -v "$dep" &>/dev/null; then
+      missing_dep+=("$dep")
+    fi
+  done
+
+  # Install missing dependencies if any
+  if [[ -n ${missing_dep[*]} ]]; then
+    msg_warn "The following dependencies are missing: ${missing_dep[*]}"
+    read -rp "Do you want to install them? (yes/no): " install_dep
+    install_dep=${install_dep:-"yes"}
+    if [[ "$install_dep" =~ ^[][Yy][Ee][Ss]$ ]]; then
+      msg_info "Installing missing dependencies"
+      apt install "${missing_dep[@]}"
+      wget https://github.com/mazznoer/lolcrab/releases/download/v0.3.1/lolcrab-x86_64-unknown-linux-gnu.tar.gz
+      tar -xvf lolcrab-x86_64-unknown-linux-gnu.tar.gz
+      mv lolcrab /usr/bin/
+      rm -rf lolcrab-x86_64-unknown-linux-gnu.tar.gz
+
+    else
+      msg_info "skipping deps you might experience errors"
+    fi
+  else
+    msg_info "All dependencies are installed"
+  fi
+}
+
+################################################################ First Banner ###############################################################
+# state verbose
+# state Password
+# state CTID
+
+intro() {
+  figlet -t -c -W -w 187 -f pagga "docker Or LXC"
+  figlet -t -c -W -w 187 -f pagga "for Proxmox"
+  figlet -t -c -W -w 187 -f pagga "DoxMox"
+  figlet -t -c -W -w 187 -f term "by zshmeta - Le Z c le S"
+  CTID=$(pvesh get /cluster/nextid)
+  YESNO=("no" "yes")
+
+  msg_info "set a password for your root user ${KEY}"
+  PASSWORD=25333
+  # Get password from user using fzf
+  if [ -z "$PASSWORD" ]; then
+    PASSWORD=$(echo "" | fzf --print-query --layout=reverse-list --prompt "${KEY}Password (5 characters minimum): " --query "")
+  fi
+
+  # Check password length
+  if [ "${#PASSWORD}" -lt 5 ]; then
+
+    msg_error "Password needs to be at least 5 characters long"
+
+    SKIP_PASS=$(printf '%s\n' "${YESNO[@]}" | fzf --reverse --prompt ' Skip for now? ' --height 50% --border)
+
+    if [ "$SKIP_PASS" == "yes" ]; then
+      PASSWORD="root$CTID"
+
+      msg_info "Password set to $PASSWORD"
+    else
+      msg_info "Please enter a valid password"
+    fi
+  fi
+  # Assume that OLDCTID is already defined somewhere in your script
+
+  msg_info "Container ID set to $CTID ${PIN}${DKR}"
+
+  # Prompt to change CTID
+  msg_info "Would you like to change your container ID?"
+  press_to_pause
+  # shellcheck disable=SC2181
+
+  if [ $? -eq 0 ]; then
+
+    existing_ctids=$(pct list | awk '{print $1}' | sed '1d' | sort -n)
+
+    # Infinite loop until a valid CTID is entered or user exits
+    while true; do
+      # Get existing CTIDs
+
+      # Prompt the user for a new CTID
+      msg_info "Please enter a three-digit number between $CTID and 999"
+      read -r -p "New CTID: " new_ctid
+      # If the user presses Enter without input, accept the current CTID
+      if [ -z "$new_ctid" ]; then
+        echo "CTID remains as $CTID"
+        break
+      elif echo "$existing_ctids" | grep -wq "$new_ctid"; then
+        echo "Error: CTID $new_ctid is already in use."
+      elif [[ $new_ctid =~ ^[0-9]{3}$ ]] && [[ $new_ctid -ge $CTID ]] && [[ $new_ctid -le 999 ]]; then
+
+        CTID=$new_ctid
+        echo "CTID changed to $new_ctid"
+        break
+      else
+        echo "Invalid input. Must be a unique three-digit number Dabetween $CTID and 999."
+      fi
+    done
+  fi
+
+  echo "Container ID set to $CTID"
+}
+
+####################################################################Set Sources###############################################################################################
+
+docker_hub_images() {
+  page_size=100
+  page=1
+  selected_image=""
+  while true; do
+    response=$(curl -s "https://hub.docker.com/v2/repositories/library/?page=$page&page_size=$page_size")
+    if [[ $(echo "$response" | jq '.results | length') -gt 0 ]]; then
+      selected_image+=$(echo "$response" | jq -r '.results | .[]  | select(.description | test("DEPRECATED") | not) | "\(.name)\t\(.description)"')
+      page=$((page + 1))
+    else
+      break
+    fi
+  done
+  # Retrieve the image names and descriptions from the API and sort them
+  query=$(echo -e "$selected_image" | fzf --header 'Select an image or type a search term: ' --cycle --height 50% --reverse --border --preview-window right:70% --preview 'echo {2..}' --with-nth=1 --print-query | awk 'NR==1 {print}')
+
+  while [ -n "$query" ]; do
+    echo "Searching the hub for $query..."
+    selected_image=$(podman search --no-trunc --limit=500 "$query")
+    selected_image=$(echo -e "$selected_image" | fzf --header 'Select an image or type a search term: ' --cycle --height 50% --reverse --border --preview-window right:70% --preview 'echo {2..}' --with-nth=1 --print-query)
+    query=$(echo -e "$selected_image" | awk 'NR==1 {print}')
+  done
+
+  # Once the loop exits, set selected_image to the first line of the previous value
+  selected_image=$(echo "$selected_image" | awk 'NR==2 {print}')
+
+  echo "Selected image: $selected_image"
+}
+
+set_source() {
+
+  type_options=("lxc ${DKR}" "apps" "${LXC}""docker")
+  CT_TYPE=$(printf '%s\n' "${type_options[@]}" | fzf --reverse --prompt 'Type of container: ' --height 50% --border)
+  if [ "$CT_TYPE" == "docker ${DKR}" ]; then
+    CT_TYPE="docker"
+  elif [ "$CT_TYPE" == "lxc ${LXC}" ]; then
+    CT_TYPE="lxc"
+  elif [ "$CT_TYPE" == "apps" ]; then
+    CT_TYPE="apps"
+  fi
+
+  msg_info "Container set to $CT_TYPE type"
+
+  msg_info "Chose the source of the container"
+
+}
+
+####################################################################Set Templates#########################################################################################
+
+set_template() {
+
+  #Updating the list of available templates
+  pveam update
+  msg_info "Proxmox needs space to store the templates"
+  msg_info "checking the template storage"
+  vztmpl=$(pvesm status --content vztmpl | sed '1d' | awk '{print $1}')
+
+  # if we return more than one item then inquire user to chose
+  #if rpool/templates exists with typvztmpl we ask wether to use it
+  if pvesm status | grep -q "templates"; then
+    msg_info "Found storage for your Templates."
+    STORAGE_TEMPL="templates"
+  else
+    # Check if storage templates exists
+    if [ -z "$vztmpl" ]; then
+      msg_info "No storage for templates found"
+      msg_info "Creating storage"
+      msg_info "Name your template storage"
+      STORAGE_TEMPL=$(echo "" | fzf --print-query --reverse --prompt "Name your Storage: " --query "templates")
+      # Create new ZFS storage pool called templates
+      msg_info "Creating a storage for your templates with zstd compression and relatime....."
+      msg_info "Press any keys to cancel...."
+      press_to_pause
+      zfs create "rpool/$STORAGE_TEMPL" -v -o mountpoint=/rpool/"$STORAGE_TEMPL" -o compression=zstd -o relatime=on -o sync=standard
+      pvesm add dir "$STORAGE_TEMPL" --content vztmpl --path "/rpool/$STORAGE_TEMPL"
+      msg_info "New storage $STORAGE_TEMPL created"
+    else
+      # Use the existing storage
+      msg_info "Chose an existing storage for templates"
+      STORAGE_TEMPL=$(printf "%s\n%s\n" "$vztmpl" "Create a new template storage" | fzf --reverse --prompt 'Select storage for your templates: ' --height 50% --border)
+    fi
+  fi
+  msg_info "Selected $STORAGE_TEMPL as storage for the template"
+
+  docker_images_fleet=$(curl -s https://fleet.linuxserver.io/api/v1/images | jq -r '.data.repositories | .lsiocommunity[], .linuxserver[], .lsiobase[] | .name')
+
+  if [ "$CT_TYPE" == "lxc" ]; then
+    source_options=("linux distro" "turnkeylinux" "Yaml")
+    CT_SOURCE=$(printf '%s\n' "${source_options[@]}" | fzf --reverse --prompt 'Source of the container: ' --layout=reverse --inline-info --cycle --height=10 --border --ansi --no-clear --preview-window=right:70% --preview="echo {+} | tr '[:lower:]' '[:upper:]' $CT_SOURCE")
+    if [ "$CT_SOURCE" == "linux distro" ]; then
+      CT_SOURCE="linux"
+    elif [ "$CT_SOURCE" == "turnkeylinux" ]; then
+      CT_SOURCE="turnkeylinux"
+    elif [ "$CT_SOURCE" == "Yaml" ]; then
+      CT_SOURCE="yaml"
+    fi
+    msg_info "Container set to $CT_SOURCE source"
+  elif
+    [ "$CT_TYPE" == "apps" ]
+  then
+    msg_info "These apps where all based on apps's collection tweaked to work on this script"
+    msg_info "Plenty of must-have tools to chose from"
+    mapfile -t source_options < <(ls "$HOME/zsh_proxmox/Apps")
+    CT_SOURCE=$(printf '%s\n' "${source_options[@]}" | fzf --reverse --prompt 'Source of the container: ' --height 50% --border)
+    hostname=$(echo "$CT_SOURCE" | cut -d '.' -f 1)
+    msg_info "Container set to $CT_SOURCE source"
+
+  elif
+
+    [ "$CT_TYPE" == "docker" ]
+  then
+    source_options=("Local - Compose" "linuxserver" "dockerhub")
+    CT_SOURCE=$(printf '%s\n' "${source_options[@]}" | fzf --reverse --prompt 'Source of the container: ' --height 50% --border)
+    echo "$CT_SOURCE wesh"
+    if [ "$CT_SOURCE" == "local" ]; then
+      CT_SOURCE="local"
+    elif [ "$CT_SOURCE" == "dockerhub" ]; then
+      CT_SOURCE="dockerhub"
+    elif [ "$CT_SOURCE" == "linuxserver" ]; then
+      CT_SOURCE="linuxserver"
+    fi
+    msg_info "Container set to $CT_SOURCE source"
+  fi
+
+  if [ "$CT_TYPE" == "docker" ]; then
+    if [ "$CT_SOURCE" == "local" ]; then
+      source_options=("Local - dockerfile" "Local - docker-compose.yml")
+      CT_SOURCE=$(printf '%s\n' "${source_options[@]}" | fzf --reverse --prompt 'Source of the container: ' --height 50% --border)
+      if [ "$CT_SOURCE" == "Local - dockerfile" ]; then
+        # Use fzf to select an image from the local repository, and store the selection in TEMPLATE
+        docker_images=("$(podman images)" "import a dockerfile" "import a docker-compose.yml")
+        # we take the "/localhost/" out of the template name
+        template=$(echo "$template" | sed 's/\localhost\///g')
+        template=$(echo "$template" | sed 's/\zshmeta\///g')
+        template=$(printf '%s\n' "${docker_images[@]}" | fzf --height 50 --reverse --border --ansi --border-label="╢ $(podman images) ╟" | awk '{print $1}')
+        if [[ "$template" == "import a dockerfile" ]]; then
+          msg_info "Please enter the path to your dockerfile ex: path/to/dockerfile"
+          msg_info "have your dockerfile in  a dedicated dir directory"
+          msg_info "Please enter the path to your dockerfile"
+
+          read -r -p "" template
+          CT_SOURCE="dockerfile"
+        elif [[ "$template" == "import a docker-compose.yml" ]]; then
+
+          msg_info "Please enter the path to your docker-compose.yml"
+          msg_error "Please have your docker-compose.yml in a dedicated directory"
+          read -r -p "" template
+          CT_SOURCE="dockercompose"
+        fi
+        msg_info "Please enter a name of your image"
+        msg_info "You can chose to use a randomly generated name"
+        msg_info "Or use a name of your choice"
+        random_names=("Input your chosen name" "deep-purple" "Scarface" "Godfather" "Matrix" "Shawshank-Redemption" "Terminator" "Usual-Suspects" "Pulp-Fiction" "Fight-Club" "Dark-Knight" "Inception" "Lord-Rings" "Star-Wars" "Avengers" "Silence-Lambs" "Prestige" "Departed" "rGeen-Mile" "Gladiator" "Lion-King" "Sixth-Sense" "Truman-Show" "Big-Lebowski" "Pianist")
+        random_name=$(printf '%s\n' "${random_names[@]}" | fzf --reverse --prompt 'Select a random name: ' --height 50% --border)
+        if [ "$random_name" == "Input your chosen name" ]; then
+          msg_info 'Please enter a name for your image'
+          template=$(echo "" | fzf --print-query --reverse --prompt "Name your image: " --query "")
+        else
+          template=$random_name
+        fi
+
+        msg_info "Building your image"
+
+      elif [ "$CT_SOURCE" == "linuxserver" ]; then
+        # Use fzf to select an image from the remote repository, and store the selection in TEMPLATE
+        template=$(echo "$docker_images_fleet" | sort | fzf --height 50 --reverse --border --ansi | awk '{print $1}')
+
+      elif [ "$CT_SOURCE" == "dockerhub" ]; then
+        # Allow users input to select an image from dockerhub
+        template=$(docker_hub_images)
+      fi
+    fi
+
+  elif [ "$CT_TYPE" == "lxc" ]; then
+
+    # Ask user to choose a template
+    msg_info "${PXMX} Proxmox templates:"
+    # use fzf to ask wether user wants turnkey or pure os template
+    # if linux distro show only the template --section system
+    if [ "$CT_SOURCE" == "linux" ]; then
+      template=$(pveam available --section system | awk '{print $2}')
+
+    elif
+      [ "$CT_SOURCE" == "turnkeylinux" ]
+    then
+      template=$(pveam available --section turnkeylinux | awk '{print $2}')
+    fi
+    # Use fzf to select a template
+    template=$(echo "$template" | fzf --height 50 --reverse --border --ansi | awk '{print $1}')
+  fi
+
+  msg_info "Selected template: $template"
+
+  if [ "$CT_TYPE" == "docker" ]; then
+    if [[ "$CT_SOURCE" == "linuxserver" ]]; then
+      template="linuxserver/$template"
+    elif [[ "$CT_SOURCE" == "local" ]]; then
+      template="zshmeta/$template"
+    fi
+
+    hostname="$(basename "$template")"
+
+  else
+
+    # This function parses the template name and extracts the OS type and hostname
+    # Remove anything after a dot
+    template_name=$(echo "$template" | cut -d '.' -f 1)
+    # Replace - with space
+    template_name=$(echo "$template_name" | tr '-' ' ')
+    # Remove all symbols and numeric characters from the string
+    template_name=$(echo "$template_name" | tr -cd '[:alpha:][:blank:]')
+    # Assign the first word to OS_TYPE and the last word to hostname
+    OS_TYPE=$(echo "$template_name" | awk '{print $1}')
+    if [ "$CT_SOURCE" == "linux" ]; then
+      hostname=$(echo "$template_name" | awk '{print $1}')
+    elif [ "$CT_SOURCE" == "turnkeylinux" ]; then
+      hostname=$(echo "$template_name" | awk '{print $NF}')
+    fi
+  fi
+
+}
+
+####################################################################Set Storage#########################################################################################
+
+set_storage() {
+  msg_info "Setting up storage..."
+  msg_info "Your options are to use a shared storage or create a dedicated one"
+
+  # Get a list of available storage options
+  CONT_STOR=$(pvesm status --content rootdir | awk 'NR>1{print $1}')
+
+  storage_options=("${CONT_STOR[@]}" "Create a new storage")
+  STORAGE=$(printf '%s\n' "${storage_options[@]}" | fzf --reverse --prompt 'Select storage for your containers: ' --height 50% --border)
+
+  if [ "$STORAGE" == "Create a new storage" ]; then
+    # Prompt the user to enter a name for the new storage
+    CUST_STORAGE=("$hostname" "Name your Storage")
+
+    STORAGE=$(printf '%s\n' "${CUST_STORAGE[@]}" | fzf --reverse --prompt 'Select storage for your containers: ' --height 50% --border)
+    if [ "$STORAGE" == "Name your Storage" ]; then
+      NAME_STORAGE=$(echo -e "" | fzf --print-query --reverse --prompt "Name your Storage: " --query "")
+      STORAGE=$NAME_STORAGE
+    fi
+    # Create a new ZFS storage pool with the specified name
+    msg_info "Creating a storage for your containers with zstd compression and relatime..."
+    msg_warn "Press any key within 5 sec to cancel..."
+    press_to_pause
+    zfs create "rpool/$STORAGE" -v -o mountpoint=/rpool/"$STORAGE" -o compression=zstd -o relatime=on -o sync=standard
+    pvesm add zfspool "$STORAGE" --content rootdir --pool "rpool/$STORAGE"
+  fi
+  # The user chose an existing storage option
+  msg_info "Selected $STORAGE as storage for the containers"
+
+}
+
+###################################################################Set the Install##############################################################################
+
+lxc_install() {
+
+  # This function parses the template name and extracts the OS type and hostname
+  # Remove anything after a dot
+  template_name=$(echo "$template" | cut -d '.' -f 1)
+  # Replace - with space
+  template_name=$(echo "$template_name" | tr '-' ' ')
+  # Remove all symbols and numeric characters from the string
+  template_name=$(echo "$template_name" | tr -cd '[:alpha:][:blank:]')
+  # Assign the first word to OS_TYPE and the last word to hostname
+  OS_TYPE=$(echo "$template_name" | awk '{print $1}')
+  if [ "$CT_SOURCE" == "linux" ]; then
+    hostname=$(echo "$template_name" | awk '{print $1}')
+  elif [ "$CT_SOURCE" == "turnkeylinux" ]; then
+    hostname=$(echo "$template_name" | awk '{print $NF}')
+  fi
+  msg_info "storage for template is $STORAGE_TEMPL"
+
+  # Check if the template exists
+  if pveam list "$STORAGE_TEMPL" | grep -q "$STORAGE_TEMPL:vztmpl/$template"; then
+    # The template exists, ask wether to redownload or not
+    msg_info "Template $hostname already exists."
+    use_template_options=("yes" "no")
+    use_template=$(printf '%s\n' "${use_template_options[@]}" | fzf --reverse --prompt 'Use existing template? ' --height 50% --border)
+
+    if [ "$use_template" == "yes" ]; then
+      # The user chose not to redownload the template
+      msg_info "Using existing template $hostname..."
+    else
+      # Delete the template
+      msg_info "Deleting template $hostname..."
+      pveam remove "$STORAGE_TEMPL:vztmpl/$template" || msg_error "Failed to delete template $hostname"
+      msg_info "Template $hostname deleted successfully."
+      pveam download "$STORAGE_TEMPL" "$template" || msg_error "Template download failed"
+    fi
+  else
+    # The template does not exist, download it
+    msg_info "Template $hostname does not exist, downloading...\n"
+    pveam download "$STORAGE_TEMPL" "$template" || msg_error "Template download failed"
+    msg_info "Template $hostname downloaded successfully."
+  fi
+
+  OS_TYPE=$(echo "$template" | awk -F- '{print $1}')
+  STORAGE_TEMPL=$STORAGE_TEMPL:vztmpl/"$template"
+}
+
+cont_install() {
+
+  # Set default repository to linuxserver if it is a docker image if input does not contain a /
+  if [ "$CT_TYPE" == "docker" ]; then
+    if [[ "$CT_SOURCE" == "linuxserver" ]]; then
+      template="linuxserver/$template"
+    elif [[ "$CT_SOURCE" == "local" ]]; then
+      template="zshmeta/$template"
+    fi
+
+    hostname="$(basename "$template")"
+
+    hosted_options=("hosted" "bare")
+
+    msg_info "you can either have your container hosted the traditional docker way"
+    msg_info "Or extracted and run as a bare container"
+    hosted=$(printf '%s\n' "${hosted_options[@]}" | fzf --reverse --prompt 'Select Hosted or Bare: ' --height 50% --border)
+
+    if [ "$hosted" == "bare" ]; then
+      msg_info "This feature has no point in being"
+      msg_info "I mean wouldnt you just install the app?"
+      msg_info "Setting you up with a proper docker install wait..."
+    fi
+    msg_info "Please chose the host for your docker container"
+
+    DOCKER_HOSTS=$(pveam available --section system | awk '{print $2}')
+    DOCKER_HOST=$(echo -e "$DOCKER_HOSTS" | grep -e "alpine" -e "debian" -e "ubuntu" | fzf --reverse --prompt 'Select a host for your docker container: ' --height 50% --border)
+    echo -e "$DOCKER_HOST"
+    DISTRO_HOST=$(echo "$DOCKER_HOSTS" | cut -d '.' -f 1)
+    # Replace - with space
+    DISTRO_HOST=$(echo "$DISTRO_HOST" | tr '-' ' ')
+    # Remove all symbols and numeric characters from the string
+    DISTRO_HOST=$(echo "$DISTRO_HOST" | tr -cd '[:alpha:][:blank:]')
+    # Assign the first word to OS_TYPE and the last word to hostname
+    OS_TYPE=$(echo "$DISTRO_HOST" | awk '{print $1}')
+    msg_info "getting your $OS_TYPE template"
+    pveam download "$STORAGE_TEMPL" "$DOCKER_HOST" || msg_error "Template download failed"
+    STORAGE_TEMPL=$STORAGE_TEMPL:vztmpl/$DOCKER_HOST
+    msg_info "Template $DOCKER_HOST downloaded successfully."
+  fi
+}
+
+apps_install() {
+
+  if [ "$CT_TYPE" == "apps" ]; then
+
+    msg_info "Full fledged Web Apps running on alpine or debian"
+    msg_info "Lets get a host for your app"
+
+    STORAGE_TEMPL=$(pveam available --section system | grep -w -E "(alpine|debian)")
+    if [[ "$hostname" == *"alpine"* ]]; then
+      STORAGE_TEMPL=$(echo "$STORAGE_TEMPL" | grep -w "alpine")
+      OS_TYPE="alpine"
+    else
+      STORAGE_TEMPL=$(echo "$STORAGE_TEMPL" | grep -w "debian")
+      OS_TYPE="debian"
+    fi
+    STORAGE_TEMPL=$(echo "$STORAGE_TEMPL" | awk '{print $2}')
+    if [ "$(echo "$STORAGE_TEMPL" | wc -l)" -gt 2 ]; then
+      STORAGE_TEMPL=$(echo "$STORAGE_TEMPL" | fzf)
+    fi
+    msg_info "Selected template: $STORAGE_TEMPL"
+    STORAGE_TEMPL=$(echo "$STORAGE_TEMPL" | grep -w "debian")
+  fi
+  STORAGE_TEMPL=$(echo "$STORAGE_TEMPL" | awk '{print $2}')
+  if [ "$(echo "$STORAGE_TEMPL" | wc -l)" -gt 2 ]; then
+    STORAGE_TEMPL=$(echo "$STORAGE_TEMPL" | fzf)
+  fi
+  msg_info "Selected template: $STORAGE_TEMPL"
+}
+
+####################################################################Run the Install#########################################################################################
+
+pct_quick_create() {
+
+   missing_dep
+
+# shellcheck source=/dev/null
+  source /root/doxmox/Apps.sh
+
+  if [[ "$*" == *"-v"* ]] || [[ "$*" == *"--verbose"* ]]; then
+    VERB=1
+    set -x
+  fi
+ 
+
+
+  STORAGE="containers"
+  STORAGE_TEMPL="templates"
+  TZ="$(cat /etc/timezone)"
+  FEATURES="keyctl=1,nesting=1"
+  NET="name=eth0,ip=dhcp,bridge=vmbr1,type=veth"
+  MP="volume=/rpool/data,mp=/home"
+  NP="192.168.1.254"
+  TSKEY_EPHEMERAL='tskey-auth-kvnEto1CNTRL-xMZnuyazvcJmFZQyWPurcJLLprTT7KCBf'
+
+
+  # List of supported OS types
+  distros=("alpine" "arch" "centos" "debian" "devuan" "fedora" "gentoo" "nixos" "opensuse" "ubuntu" "rocky" "alma")
+
+  # List of supported apps
+  apps_list=("adguard" "alpine-docker" "alpine-grafana" "alpine-vaultwarden" "alpine-zigbee2mqtt" "audiobookshelf" "autobrr" "bazarr" "blocky" "casaos" "changedetection" "cloudflared" "cronicle" "daemonsync" "dashy" "deconz" "deluge" "docker" "emby" "emqx" "esphome" "fhem" "go2rtc" "grafana" "grocy" "heimdalldashboard" "homeassistant-core" "homeassistant" "homebridge" "homer" "hyperion" "influxdb" "iobroker" "jackett" "jellyfin" "jellyseerr" "k0s" "kavita" "keycloak" "lidarr" "magicmirror" "mariadb" "meshcentral" "motioneye" "mqtt" "n8n" "navidrome" "nginxproxymanager" "nocodb" "node-red" "octoprint" "ombi" "omv" "omada" "openhab" "openobserve" "overseerr-install" "overseerr" "paperless-ngx" "photoprism" "pihole" "plex" "podman-homeassistant" "podman" "postgresql" "prometheus" "prowlarr" "qbittorrent" "radarr" "rdtclient" "readarr" "rockylinux" "rtsptoweb" "sabnzbd" "scrypted" "shinobi" "sonarr" "syncthing" "tautulli" "tdarr" "technitiumdns" "transmission" "trilium" "ubiquiti" "ubuntu" "umbrel" "unifi" "uptimekuma" "vaultwarden" "whisparr" "whoogle" "wikijs" "wireguard" "yunohost" "zigbee2mqtt" "zoraxy" "zwave-js-ui")
+
+  # List of supported size options
+  size_list=("tiny" "small" "medium" "large")
+
+# Iterate over the apps_list array
+
+  # Initialization of variables
+      OS_TYPE=""
+      CTID=""
+      APPS=""
+      hostname=""
+      RAM_SIZE=""
+      CORE_COUNT=""
+      DISK_SIZE=""
+
+
+
+      for arg in "$@"; do # Parse arguments
+         for app in "${apps_list[@]}"; do
+             if [[ "$app" == "$arg" ]]; then
+                 APPS+=$arg
+                 echo "APPS=$APPS"
+             fi
+         done
+      done
+
+     #if APPS containes an app we declare it and grav OS_TYPE DISK_SIZE RAM_SIZE and CORE_COUNT from the function we called from Apps.sh
+
+      for distro in "${distros[@]}"; do
+        for arg in "$@"; do
+            if [[ "$distro" == "$arg" ]]; then
+            OS_TYPE="$distro"
+            echo "OS_TYPE=$OS_TYPE"
+            fi
+        done
+      done
+
+
+      for size in "${size_list[@]}"; do
+        for arg in "$@"; do
+          if [[ "$size" == "$arg" ]]; then
+              if [[ "$arg" == "tiny" ]]; then
+                      RAM_SIZE="512"
+                      CORE_COUNT="1"
+                      DISK_SIZE="2"
+              elif [[ "$arg" == "small" ]]; then
+                      RAM_SIZE="1024"
+                      CORE_COUNT="1"
+                      DISK_SIZE="4"
+              elif [[ "$arg" == "medium" ]]; then
+                      RAM_SIZE="2048"
+                      CORE_COUNT="2"
+                      DISK_SIZE="8"
+              elif [[ "$arg" == "large" ]]; then
+                      RAM_SIZE="4096"
+                      CORE_COUNT="4"
+                      DISK_SIZE="16"
+              fi
+          fi
+        done
+      done
+      if [[ $RAM_SIZE == "" && $CORE_COUNT == "" && $DISK_SIZE == "" ]]; then
+          RAM_SIZE="1024"
+          CORE_COUNT="1"
+          DISK_SIZE="4"
+      fi
+
+
+      for arg in "$@"; do
+        if [[ "$arg" =~ ^[0-9]{3}$ ]]; then
+            CTID="$arg"
+            echo "CTID=$CTID"
+            break
+        else
+            CTID=$(pvesh get /cluster/nextid)
+        fi
+      done
+
+      #Any arg that doesnt match an os an app or a size and that is not 3 digit is set as hostname
+      for arg in "$@"; do
+        for options in "${apps_list[@]}"; do
+          app_options+=" $options "
+        done
+        for sizes in "${size_list[@]}"; do
+          app_sizes+=" $sizes "
+        done
+        for distro in "${distros[@]}"; do
+          os_options+=" $distro "
+        done
+      
+        if [[ "$arg" != "$OS_TYPE" && ! "$app_options" =~ $arg && ! "$app_sizes" =~ $arg && ! "$arg" =~ ^[0-9]{3}$ ]]; then
+          hostname="$arg"
+          break
+        fi
+      done
+      
+      if [[ -z "$hostname" ]]; then
+        for app in "${APPS[@]}"; do
+          if [[ "$app" == "$OS_TYPE" ]]; then
+            hostname="$app"
+            break
+          fi
+        done
+      fi
+      
+      if [[ -z "$hostname" ]]; then
+        hostname="$OS_TYPE"
+      fi
+      
+
+
+       if pct list | grep -q "\<$hostname\>"; then
+                    # Find the next available hostname
+        i=1
+        while pct list | grep -q "\<$hostname-$i\>"; do
+            i=$((i+1))
+        done
+            # Set the hostname to the next available hostname
+        read -r -p "$hostname is taken. Input a new name or press enter for default ($hostname-$i): " new_hostname
+        if [[ "$new_hostname" == "" ]]; then
+              hostname="$hostname-$i"
+          else
+               hostname="$new_hostname"
+          fi
+        fi
+
+
+
+    if  [[ $APPS != "" ]]; then
+        function_definition=$(declare -f "$APPS")
+        OS_TYPE=$(echo "$function_definition" | grep -oP 'OS_TYPE="\K[^"]+')
+        DISK_SIZE=$(echo "$function_definition" | grep -oP 'DISK_SIZE="\K[^"]+')
+        CORE_COUNT=$(echo "$function_definition" | grep -oP 'CORE_UNIT="\K[^"]+')
+        RAM_SIZE=$(echo "$function_definition" | grep -oP 'RAM_SIZE="\K[^"]+')
+        export "${APPS}_port"="$(echo "$function_definition" | grep "$APPS"-port)"
+
+    else
+          extras_options=("" "podman" "docker")
+          extras=$(printf '%s\n' "${extras_options[@]}" | fzf --print-query --header 'Should we add docker or Podman? ' --cycle --height 10% --border --ansi)
+          extras=$(echo "$extras" | tail -n 1) # Extract the actual selection and reassign to extras
+    fi
+
+  # Validation of CTID
+  CURR_CTIDS=$(pct list | awk '{print $1}' | sed '1d')
+  while [[ $CURR_CTIDS =~ (^|[[:space:]])$CTID($|[[:space:]]) ]]; do
+      echo "CTID $CTID already exists. Please provide a new CTID."
+      read -r -p "CTID: " CTID
+  done
+
+  # if [[ -z "$hostname" ]]; then
+  #   # If any applications are provided
+  #   if [[  -n "$APPS" ]]; then
+  #       hostname=$(echo "$APPS" | awk '{print $1}')  # get the first app
+  #   # If no applications are provided
+  #   else
+  #       hostname=$OS_TYPE
+  #   fi
+  # fi
+
+
+
+
+
+  if [ -z "$OS_TYPE" ]; then
+    msg_error "Error: No OS specified."
+    msg_info "No OS specified."
+    msg_info "Available OSes: ${distros[*]}"
+    OS_TYPE=$(printf '%s\n' "${distros[@]}" | fzf --header="Select OS" --height 40% --layout=reverse --border --ansi --prompt="OS: ")
+  fi
+
+  # Display the configurations
+  figlet -w 160 -f term "$OS_TYPE ID: $CTID as $hostname with $RAM_SIZE ram and $DISK_SIZE GB"
+
+  # Ensure OS_TYPE is set
+
+
+
+  # Fetch the latest template for OS_TYPE
+  template=$(pveam available --section system | grep "$OS_TYPE" | tail -n 1 | awk '{print $2}')
+  if pveam list "$STORAGE_TEMPL" | grep -q "$template"; then
+    msg_info "Template $template already downloaded."
+  else
+    msg_info "Downloading template $template."
+    pveam download "$STORAGE_TEMPL" "$template"
+    msg_ok "$template downloaded successfully."
+  fi
+  if [ -z "$template" ]; then
+    msg_warn "Error: No template found for $OS_TYPE."
+    error_handler "No template found for $OS_TYPE."
+  fi
+
+  if [[ "$OS_TYPE" =~ ^(rocky|alma|rhel|ubi8)$ ]]; then
+     OS_TYPE="centos"
+  fi
+
+  # Prompt for password
+  if [ -z "$PASSWORD" ]; then
+    read -r -sp "Enter Password (5 characters minimum): " PASSWORD
+    echo ''
+    while [ ${#PASSWORD} -lt 5 ]; do
+      read -r -sp "Password must be at least 5 characters. Enter Password: " PASSWORD
+      echo ''
+    done
+  fi
+
+  # Create container
+  pct create "$CTID" "$STORAGE_TEMPL:vztmpl/$template" \
+    -arch amd64 \
+    -features $FEATURES \
+    -unprivileged 1 \
+    -hostname "$hostname" \
+    -net0 $NET \
+    -onboot 1 \
+    -cores "$CORE_COUNT" \
+    -memory "$RAM_SIZE" \
+    -rootfs "$STORAGE:$DISK_SIZE" \
+    -storage "$STORAGE" \
+    -swap "$RAM_SIZE" \
+    -ostype "$OS_TYPE" \
+    -description "$hostname - by zshmeta - Le Z c le S" \
+    -timezone "$TZ" \
+    -mp0 "$MP" \
+    -nameserver "$NP" \
+    -password "$PASSWORD"
+
+}
+
+
+
+####################################################################Run the Install#########################################################################################
+
+pct_set() {
+
+  if [ "$CT_TYPE" == "docker" ]; then
+    cont_install
+
+  elif [ "$CT_TYPE" == "lxc" ]; then
+    lxc_install
+
+  elif [ "$CT_TYPE" == "apps" ]; then
+    apps_install
+  fi
+
+  # Define the options
+  ram_options=("1GB 💾" "512MB 💾" "2GB 💾💾" "3GB 💾💾💾" "4GB 💾💾💾💾")
+  disk_options=("4GB 📀" "2GB 📀" "8GB 📀📀" "12GB 📀📀📀" "16GB 📀📀📀📀")
+  core_options=("1 core 🖥️" "2 cores 🖥️🖥️" "3 cores 🖥️🖥️🖥️" "4 cores 🖥️🖥️🖥️🖥️")
+
+  BUNDLE_OPTIONS=("Small: 1GB RAM, 1 core CPU, 4GB Disk" "Medium: 2GB RAM, 2 core CPU, 8GB Disk" "Large: 4GB RAM, 4 core CPU, 12GB Disk" "Tiny: 512MB RAM, 1 core CPU, 2GB Disk" "Custom")
+
+  BUNDLE_CHOICE=$(printf '%s\n' "${BUNDLE_OPTIONS[@]}" | fzf --reverse --prompt 'Select Bundle options: ' --height 50% --border)
+
+  if [[ "$BUNDLE_CHOICE" == "Small: 1GB RAM, 1 core CPU, 4GB Disk" ]]; then
+    RAM_SIZE="1024"
+    CORE_COUNT="1"
+    DISK_SIZE="4"
+  elif [[ "$BUNDLE_CHOICE" == "Medium: 2GB RAM, 2 core CPU, 8GB Disk" ]]; then
+    RAM_SIZE="2048"
+    CORE_COUNT="2"
+    DISK_SIZE="8"
+  elif [[ "$BUNDLE_CHOICE" == "Large: 4GB RAM, 4 core CPU, 12GB Disk" ]]; then
+    RAM_SIZE="4096"
+    CORE_COUNT="4"
+    DISK_SIZE="12"
+  elif [[ "$BUNDLE_CHOICE" == "Tiny: 512MB RAM, 1 core CPU, 2GB Disk" ]]; then
+    RAM_SIZE="512"
+    CORE_COUNT="1"
+    DISK_SIZE="2"
+  elif [[ "$BUNDLE_CHOICE" == "Custom" ]]; then
+    RAM_SIZE=$(printf '%s\n' "${ram_options[@]}" | fzf --reverse --prompt 'Select RAM options: ' --height 50% --border)
+    DISK_SIZE=$(printf '%s\n' "${disk_options[@]}" | fzf --reverse --prompt 'Disk options: ' --height 50% --border)
+    CORE_COUNT=$(printf '%s\n' "${core_options[@]}" | fzf --reverse --prompt 'CPU core options: ' --height 50% --border)
+    # Extract numeric values
+    RAM_SIZE=$(echo "$RAM_SIZE" | grep -o '[0-9]*')
+    if [[ "$RAM_SIZE" -ne 512 ]]; then
+      RAM_SIZE=$((RAM_SIZE * 1024))
+    fi
+    DISK_SIZE=$(echo "$DISK_SIZE" | grep -o '[0-9]*')
+    CORE_COUNT=$(echo "$CORE_COUNT" | grep -o '[0-9]*')
+  fi
+
+  OS_OPTIONS=("alma" "rhel" "alpine" "arch" "centos" "debian" "fedora" "opensuse" "rocky" "ubuntu")
+
+  OS_OPTION=$(printf '%s\n' "${OS_OPTIONS[@]}" | grep -wo "$OS_TYPE")
+
+  if [[ -n $OS_OPTION ]]; then
+    OS_TYPE=$OS_OPTION
+    msg_info "OS type: $OS_TYPE"
+  else
+    OS_TYPE=$(printf '%s\n' "${OS_OPTIONS[@]}" | fzf --reverse --prompt 'Select OS type: ' --height 50% --border)
+    msg_info "Selected OS type: $OS_TYPE"
+  fi
+
+  msg_info "Enter a ${KEY} hostname for the new ${DKR} container (default:${DG} ${hostname}): "
+  custom_hostname=$(echo "" | fzf --print-query --reverse --height 50% --prompt "Enter a hostname for the new container (default: $hostname): " --query "")
+
+  if [ "${custom_hostname}" != "" ]; then
+    hostname="$custom_hostname"
+  fi
+  echo "Selected hostname: $hostname"
+
+  # Set default values
+  NET="name=eth0,ip=dhcp,bridge=vmbr0,type=veth"
+  if [[ $CT_TYPE == "docker" ]]; then
+    FEATURES="fuse=1,keyctl=1,nesting=1"
+  else
+    FEATURES="keyctl=1,nesting=1"
+  fi
+  PASSWORD=$(fzf --print-query --reverse --prompt "Enter the container Password (Current: $PASSWORD):" --query "$PASSWORD")"\n"
+  if [ "$PASSWORD" == "" ]; then
+    msg_info "No Password set Are you sure you want to continue?"
+    confirm_options=("yes" "no")
+    confirm=$(printf '%s\n' "${confirm_options[@]}" | fzf --reverse --prompt 'Confirm? ' --height 50% --border)
+    if [ "$confirm" == "no" ]; then
+      msg_info "type cancel to exit"
+      read -r -p "Are you sure you want to cancel?" prompt
+      if [ "$prompt" == "cancel" ]; then
+        msg_info "exiting..."
+        msg_info "exiting..."
+        error_handler "exiting..."
+
+      else
+        PASSWORD="$USER$CTID\n"
+      fi
+    fi
+  fi
+  msg_info "Password set to $PASSWORD"
+
+  TZ=$(cat /etc/timezone)
+  MP="volume=/rpool/homies,mp=/home"
+  msg_info "Timezone set to $TZ"
+  # Print the values of the variables for confirmation
+
+  msg_info "Creating container with the following parameters:"
+  msg_info "Container ID: $CTID"
+  msg_info "Features: $FEATURES"
+  msg_info "Hostname: $hostname"
+  msg_info "Core count: $CORE_COUNT CPU"
+  msg_info "RAM size: $RAM_SIZE MB"
+  msg_info "Disk size: $DISK_SIZE GB"
+  msg_info "IP address: $NET"
+  msg_info "Operating system type: $OS_TYPE"
+  msg_info "Description: $hostname created with the help of zshmeta"
+
+  # Prompt the user for confirmation
+
+  msg_info "Confirm the parameters and create the container?"
+  confirm_options=("yes" "no")
+  confirm=$(printf '%s\n' "${confirm_options[@]}" | fzf --reverse --prompt 'Confirm the parameters and create the container? ' --height 50% --border)
+  if [ "$confirm" == "no" ]; then
+    msg_info "type cancel to exit"
+    read -r -p "Are you sure you want to cancel?" prompt
+    if [ "$prompt" == "cancel" ]; then
+      msg_info "exiting..."
+      error_handler "exiting..."
+    else
+      msg_info "Creating container..."
+    fi
+  fi
+  # Launch the pct create command with the actual values
+
+  pct create "$CTID" "$STORAGE_TEMPL" \
+    -features $FEATURES \
+    -unprivileged 1 \
+    -hostname "$hostname" \
+    -net0 $NET \
+    -onboot 1 \
+    -cores "$CORE_COUNT" \
+    -memory "$RAM_SIZE" \
+    -rootfs "$STORAGE:$DISK_SIZE" \
+    -storage "$STORAGE" \
+    -swap "$RAM_SIZE" \
+    -ostype "$OS_TYPE" \
+    -description "$hostname - by zshmeta - Le Z c le S" \
+    -mp0 "$MP" \
+    -timezone "$TZ" \
+    -password "$PASSWORD"
+
+}
+
+# if there are arguments we run pct_quick_create with the arguments
+
+if [ $# -gt 0 ]; then
+  pct_quick_create "$@"
+else
+  # otherwise we run the interactive mode
+  missing_dep
+  intro
+  set_source
+  set_template
+  set_storage
+  pct_set
+fi
+
+clear
+header "$hostname $CTID" 
+message "Container $hostname $CTID is cooking..." | lolcat
+message "Let's Set $hostname $CTID for you" | lolcat
+msg_ok "👍${PARTY}${PARTY}${FIRE}${DKR}🔁💻🔄📚💼📱📡🌐📤📫📥👍${PARTY}${PARTY}${FIRE}${DKR}👍${PARTY}🔁💻🔄📚💼📱📡🌐📤📫📥${PARTY}${FIRE}${DKR}🔁💻🔄📚💼📱📡🌐📤📫📥${PARTY}${PARTY}${NC}"
+msg_ok "👍${PARTY}${PARTY}${FIRE}🔁💻🔄📚💼📱📡🌐📤📫📥${DKR}👍${PARTY}${PARTY}${FIRE}${DKR}👍${PARTY}👍${PARTY}${PARTY}🔁💻🔄📚💼📱📡🌐📤📫📥${FIRE}${DKR}👍${PARTY}${PARTY}🔁💻🔄📚💼📱📡🌐📤📫📥${FIRE}${DKR}${NC}"
+
+####################################################################Set the Configs#########################################################################################
+
+msg_info "Starting Container" | lolcat
+pct start "$CTID"
+
+# Allow some time for the container to start
+
+msg_info "Host Container Started" | lolcat
+
+##################################################################Set the Configs#########################################################################################
+
+doxymoxy() {
+
+  RED="\e[31m"
+  GREEN="\e[32m"
+  YELLOW="\e[33m"
+
+  error_handler() {
+    local exit_code="$?"
+    local line_number="$1"
+    local command="$2"
+    local cmd_error
+    cmd_error=$(history | tail -n1 | sed -e 's/^[ ]*[0-9]*[ ]*//g')
+    local error_message="[ERROR] \nError msg: $cmd_error \nin line $line_number: \nexit code $exit_code: \nwhile executing command $command"
+    msg_error "\n$error_message"
+
+    # Ask the user if they want to continue, re-run the commands or enter a shell
+    while true; do
+      read -r -p "An error occurred. Do you want to continue (c), re-run the commands (r) or enter a shell (s)? " crs
+      case $crs in
+      [Cc]*) break ;;
+      [Rr]*)
+        # Rerun the last command.
+        # Note: This is a bit risky as it might not always produce the desired results depending on the context.
+        eval "$cmd_error"
+        ;;
+      [Ss]*)
+        # Provide a shell
+        msg_info "Dropping to a shell for troubleshooting. Type 'exit' to continue the script."
+        bash
+        ;;
+      [Ee]*)
+        # Exit the script
+        cleanup_exit
+        ;;
+      *) msg_info "Please answer continue (c), re-run (r), enter a shell (s), or exit the script (e)." ;;
+      esac
+    done
+
+
+  }
+
+  msg_info() {
+    echo -e "┅>>👍⌛ $1"
+  }
+
+  msg_error() {
+    echo -e "┅>> ${RED}🧯✗ $1"
+  }
+
+  msg_warn() {
+    echo -e "┅>> ${YELLOW}📍⚠  $1"
+  }
+
+  msg_ok() {
+    echo -e "┅>> ${GREEN}👍👍✓ $1"
+  }
+
+
+  ##########################################################################################################################################################
+  # Functions
+
+
+
+  ##########################################################################################################################################################
+
+  ensure_network() {
+    RETRY_EVERY=2
+
+    # Check if we have a valid IP
+    for ((i = 1; i <= 5; i++)); do
+      if [ "$(hostname -i)" != "" ]; then
+        break
+      fi
+
+      msg_error "No Network! Retrying ($i/$MAX_RETRIES) in $RETRY_EVERY seconds..."
+    done
+
+    if [ "$(hostname -i)" == "" ]; then
+      msg_error "Network is unreachable after $MAX_RETRIES retries."
+      prompt_retry_or_exit
+    else
+      msg_info "Network is reachable"
+    fi
+
+    # Check for Internet connectivity
+    if ! ping -c 3 -W 1 google.com &>/dev/null; then
+      msg_error "No Internet Connection"
+      msg_info "Trying again"
+      if ! ping -c 1 -W 1 google.com &>/dev/null; then
+        msg_error "Still no Internet Connection"
+        msg_info " 🖧  Check Network Settings"
+        prompt_retry_or_exit
+      fi
+    else
+      msg_info "Internet Connected"
+
+    fi
+
+    # Check for DNS resolution
+    RESOLVEDIP=$(getent hosts github.com)
+    if [[ -z "$RESOLVEDIP" ]]; then
+      msg_error "DNS Lookup Failure"
+    else
+      msg_info "DNS Resolved github.com to $RESOLVEDIP"
+    fi
+
+    # Clean up any residual issues
+    rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED
+  }
+
+  ##########################################################################################################################################################
+
+  prompt_retry_or_exit() {
+    prompt
+
+    msg_info "Issue with Network"
+    read -r -p "Would you like to try again? <Y/n> " prompt
+
+    if [[ "${prompt,,}" =~ ^(n|no)$ ]]; then
+      msg_info "exiting..."
+      error_handler $LINENO "$BASH_COMMAND"
+    else
+      ensure_network
+    fi
+  }
+
+  ##########################################################################################################################################################
+
+  install_packages() {
+
+    
+ set_locales() { 
+    msg_info "Setting locales "
+
+    # Ensure the locale we're trying to set is available
+    if ! grep -q "^en_US.UTF-8" /etc/locale.gen; then
+        msg_info "en_US.UTF-8 not found in /etc/locale.gen. Adding..."
+        echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+    fi
+
+    if [ "$OS_TYPE" == "debian" ] || [ "$OS_TYPE" == "ubuntu" ]; then
+        # Use the correct sed pattern
+        sed -i '/^#.*en_US.UTF-8/s/^#//' /etc/locale.gen
+        
+        # Check if locale-gen is available
+        if command -v locale-gen &> /dev/null; then
+            locale-gen
+        else
+            msg_info "locale-gen not found. Skipping..."
+        fi
+
+        localedef -i en_US -f UTF-8 en_US.UTF-8
+        echo "LC_ALL=en_US.UTF-8" > /etc/default/locale
+        echo "LANG=en_US.UTF-8" >> /etc/default/locale
+    elif [ "$OS_TYPE" == "centos" ] || [ "$OS_TYPE" == "fedora" ] || [ "$OS_TYPE" == "opensuse" ]; then
+        localedef -i en_US -f UTF-8 en_US.UTF-8
+        echo "LC_ALL=en_US.UTF-8" > /etc/locale.conf
+        echo "LANG=en_US.UTF-8" >> /etc/locale.conf
+    elif [ "$OS_TYPE" == "archlinux" ]; then
+        sed -i '/^#.*en_US.UTF-8/s/^#//' /etc/locale.gen
+        locale-gen
+        localedef -i en_US -f UTF-8 en_US.UTF-8
+        echo "LC_ALL=en_US.UTF-8" > /etc/locale.conf
+        echo "LANG=en_US.UTF-8" >> /etc/locale.conf
+    elif [ "$OS_TYPE" == "alpine" ]; then
+        apk add --no-cache shadow musl-locales
+        addgroup -S sudo
+    else
+        error_handler $LINENO "Unsupported distribution for locale configuration: $OS_TYPE"
+    fi
+
+    # Export the variables for the current session
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+
+    # Ensure they're set for future sessions
+    echo "export LC_ALL=en_US.UTF-8" >> /etc/profile
+    echo "export LANG=en_US.UTF-8" >> /etc/profile
+
+    msg_info "Locales set"
+
+
+}
+      
+   # Common packages across all distributions
+
+     
+      if [ "$OS_TYPE" == "debian" ] || [ "$OS_TYPE" == "ubuntu" ]; then
+      if ! ping -c 1 http://deb.debian.org; then 
+      sleep 2
+      fi 
+          apt update -y
+          apt install -y  locales
+          set_locales
+          apt upgrade -y
+          apt install -y  zsh nano sudo
+          apt install -y curl wget git figlet
+          apt install -y neofetch fzf openssh-client openssh-server exa
+          apt install neofetch
+          apt autoremove -y
+          apt autoclean -y
+          curl -s https://api.github.com/repos/mazznoer/lolcrab/releases/latest | grep '"browser_download_url":.*linux.*\.tar\.gz"' | cut -d '"' -f 4 | xargs curl -LO
+          tar -xvf lolcrab*.tar.gz
+          mv lolcrab lolcat
+          mv lolcat /usr/bin/
+          rm -rf lolcrab*.tar.gz
+
+
+
+      elif [ "$OS_TYPE" == "centos" ]; then
+      if ! ping -c 1 http://mirror.centos.org; then
+      sleep 2
+      fi
+          yum install -y glibc-locale-source glibc-langpack-en
+          set_locales
+          yum update -y
+          yum upgrade -y
+          yum install -y zsh nano sudo 
+          yum install curl wget git figlet 
+          yum install neofetch fzf openssh openssh-server exa
+          yum clean all
+          curl -s https://api.github.com/repos/mazznoer/lolcrab/releases/latest | grep '"browser_download_url":.*linux.*\.tar\.gz"' | cut -d '"' -f 4 | xargs curl -LO
+          tar -xvf lolcrab*.tar.gz
+          mv lolcrab lolcat
+          mv lolcat /usr/bin/
+          rm -rf lolcrab*.tar.gz
+
+
+      elif [ "$OS_TYPE" == "fedora" ]; then
+      if ! ping -c 1 http://mirror.fedoraproject.org; then
+      sleep 2
+      fi
+          dnf install -y  glibc-locale-source glibc-langpack-en
+          set_locales
+          dnf update -y
+          dnf upgrade -y
+          dnf install -y  zsh nano sudo util-linux-user
+          dnf install -y curl wget git  figlet
+          dnf install -y  neofetch fzf openssh openssh-server exa 
+          dnf clean all
+          curl -s https://api.github.com/repos/mazznoer/lolcrab/releases/latest | grep '"browser_download_url":.*linux.*\.tar\.gz"' | cut -d '"' -f 4 | xargs curl -LO
+          tar -xvf lolcrab*.tar.gz
+          mv lolcrab lolcat
+          mv lolcat /usr/bin/
+          rm -rf lolcrab*.tar.gz
+
+
+      elif [ "$OS_TYPE" == "opensuse" ]; then
+      if ! ping -c 1 http://download.opensuse.org/; then
+      sleep 2
+      fi
+          zypper in  glibc-locale-source glibc-langpack-en
+          set_locales
+          zypper ref 
+          zypper dup -y
+          zypper in -y zsh nano sudo curl
+          zypper in -y wget git figlet opi
+          zypper in -y fdupes libruby2_5-2_5 libyaml-0-2 ruby2.5 ruby2.5-rubygem-gem2rpm ruby2.5-rubygem-lolcat ruby2.5-rubygem-manpages ruby2.5-rubygem-optimist ruby2.5-rubygem-paint ruby2.5-stdlib ruby-common
+          zypper in -y neofetch fzf openssh openssh-server exa
+          zypper clean all
+
+
+      elif [ "$OS_TYPE" == "archlinux" ]; then
+      if ! ping -c 1 http://mirror.archlinux.org; then
+      sleep 2
+      fi
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -S --noconfirm locales
+          set_locales
+          pacman -Syyuuv --noconfirm
+          pacman -S --noconfirm zsh nano sudo
+          pacman -S --noconfirm curl wget git figlet 
+          pacman -S --noconfirm neofetch fzf openssh exa
+          pacman -Scc --noconfirm
+          curl -s https://api.github.com/repos/mazznoer/lolcrab/releases/latest | grep '"browser_download_url":.*linux.*\.tar\.gz"' | cut -d '"' -f 4 | xargs curl -LO
+          tar -xvf lolcrab*.tar.gz
+          mv lolcrab lolcat
+          mv lolcat /usr/bin/
+          rm -rf lolcrab*.tar.gz
+
+      elif [ "$OS_TYPE" == "alpine" ]; then
+          apk update
+          apk upgrade
+          apk add --no-cache zsh nano sudo curl wget git neofetch fzf openssh 
+          apk add --no-cache lolcat figlet shadow exa lsd
+          addgroup -S sudo
+
+
+      else
+          echo "Unsupported OS type: $OS_TYPE"
+          error_handler $LINENO "$BASH_COMMAND"
+      fi
+
+
+
+      msg_info "Packages installed"
+
+
+  }
+
+  ##########################################################################################################################################################
+
+  configure_ssh() {
+
+      if [ "$OS_TYPE" == "alpine" ]; then
+          sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin yes/g" /etc/ssh/sshd_config
+          sed -i '/^#Match User/s/^#//' /etc/ssh/sshd_config
+          sed -i '/^#ForceCommand/s/^#//' /etc/ssh/sshd_config
+          rc-update add sshd
+          rc-service sshd start
+          msg_info "SSH configured for Alpine"
+      elif [ "$OS_TYPE" != "alpine" ]; then
+          sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin yes/g" /etc/ssh/sshd_config
+          sed -i '/^#Match User/s/^#//' /etc/ssh/sshd_config
+          sed -i '/^#ForceCommand/s/^#//' /etc/ssh/sshd_config
+          if [ "$OS_TYPE" == "debian" ] || [ "$OS_TYPE" == "ubuntu" ]; then
+              systemctl enable ssh
+              systemctl start ssh
+          elif [ "$OS_TYPE" == "centos" ] || [ "$OS_TYPE" == "fedora" ] || [ "$OS_TYPE" == "opensuse" ] || [ "$OS_TYPE" == "archlinux" ]; then
+              systemctl enable sshd
+              systemctl start sshd
+          else
+              error_handler $LINENO "Unsupported distribution for SSH configuration: $OS_TYPE"
+          fi
+          msg_info "SSH configured"
+      else
+          error_handler $LINENO "Unsupported distribution for SSH configuration: $OS_TYPE"
+      fi
+
+      # SSH Configuration for user
+      mkdir -p ~/.ssh && chmod 700 ~/.ssh;
+      ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa;
+      cat "$authorized_keys" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys;
+      
+      msg_info "SSH configured for $hostname"
+
+  }
+
+  ##########################################################################################################################################################
+
+  system_setup() {
+
+
+    # Create a user
+    install_packages
+   
+
+    configure_ssh
+    echo "root:$PASSWORD" | chpasswd
+
+        # Non-Alpine specific configurations
+        if [ "$OS_TYPE" != "alpine" ]; then
+          getty_override="/etc/systemd/system/container-getty@1.service.d/override.conf"
+          mkdir -p "$(dirname $getty_override)"
+          echo "
+                   [Service]
+                   ExecStart=
+                   ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 \$TERM
+                   " >"$getty_override"
+          systemctl daemon-reload
+          systemctl restart "$(basename "$(dirname "$getty_override")" | sed 's/\.d//')"
+          cp /etc/passwd /etc/passwd.bak
+          sed -i 's|root:x:0:0:root:/root:/bin/ash|root:x:0:0:root:/root:/bin/zsh|' /etc/passwd
+        else
+          usermod -s /bin/zsh root
+        fi
+
+    # Error trap
+    trap 'error_handler $LINENO "$BASH_COMMAND"' ERR
+  }
+
+  ##########################################################################################################################################################
+  customize() {
+     
+
+
+    msg_info "Setting up zshrc"
+    #set zsh as default shell and configure it
+     touch ~/.zshrc
+     chsh -s /bin/zsh
+     RUNZSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+     sh -c "$(git clone https://github.com/zsh-users/zsh-syntax-highlighting.git "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}"/plugins/zsh-syntax-highlighting)"
+     sh -c "$(git clone https://github.com/zsh-users/zsh-autosuggestions "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}"/plugins/zsh-autosuggestions)"
+     sh -c "$(git clone https://github.com/zsh-users/zsh-completions.git "${ZSH_CUSTOM:-~/.oh-my-zsh}/custom}"/plugins/zsh-completions)"
+     sh -c "$(sed -i 's/plugins=(git)/plugins=(git zsh-syntax-highlighting zsh-autosuggestions zsh-completions)/g' ~/.zshrc)"
+     sh -c "$(sed -i 's/ZSH_THEME=\"robbyrussell\"/ZSH_THEME=\"random\"/g' ~/.zshrc)"
+
+    
+
+cat <<EOF >>"$HOME/.zshrc"
+DISABLE_AUTO_UPDATE=\"true\"
+DISABLE_AUTO_UPDATE=\"true\"
+HIST_STAMPS=\"mm\/dd\/yyyy\"
+HIST_STAMPS=\"dd\/mm\/yy\"
+COMPLETION_WAITING_DOTS=\"true\"
+COMPLETION_WAITING_DOTS=\"true\"
+HISTFILE=~/.zsh_history/
+HISTFILE=~/.zsh_history
+HISTSIZE=100000
+SAVEHIST=100000
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE=\"fg=1\"
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE=\"fg=#ff00ff,bold,underline\"
+export HISTFILE='$HOME/.zsh_history'
+export EDITOR=nano
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=#ff00ff,bold,underline'
+COMPLETION_WAITING_DOTS='%F{green}wesh%F{red}.%F{yellow}.%F{green}.%f'
+export PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/snap/bin:/sbin:/usr/sbin:/usr/local/sbin:/usr/local/go/bin:$HOME/go/bin:$HOME/.cargo:$PATH
+HIST_STAMPS='dd/mm/yy'
+export LANG=en_US.UTF-8
+export LANGUAGE=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export LC_CTYPE=en_US.UTF-8
+export LC_COLLATE=en_US.UTF-8
+export LC_MESSAGES=en_US.UTF-8
+# Alias definitions which can be edited/modified with 'aedit' are called to zshrc with +=
+### But still use emacs-style zsh bindings
+bindkey -e
+##Aliases
+zedit='nano ~/.zshrc'
+alias c=' clear'
+alias aptin='apt install'
+alias aptup='apt update'
+alias ctl='systemctl'
+alias jctl='journalctl'
+alias x='ncdu'
+alias b='btop'
+alias exz='exec zsh'
+alias q='exit'
+alias tarx='tar -xzvf'
+alias tarz='tar -xvf'
+alias tarc='tar -czvf'
+alias tailscale='sudo tailscale'
+alias ts='tailscale'
+alias ghs='gh search'
+
+##Aliases for stuff
+
+alias ls='exa --colour always --time accessed --octal-permissions --long --header --grid '
+alias lsd='lsd  --date  relative   --icon-theme  fancy  --human-readable --long --permission octal'
+alias lsa='exa --color  always --date  relative --tree  --total-size  --timesort  --icon-theme  fancy --long  --human-readable -A'
+alias la='ls -a'
+alias cd=' cd'
+alias ..=' cd ..; ls'
+export OPENAI_API_KEY='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'
+export WAKATIMEKEY='waka_d8edb1d5-bc97-418a-ab2e-99e9b9a8e027'
+export TSKEY_EPHEMERAL=tskey-auth-kvnEto1CNTRL-xMZnuyazvcJmFZQyWPurcJLLprTT7KCBf
+autoload -Uz compinit; compinit
+echo "
+ **                 ********             **                  ********
+/**                //////**             /**                 **//////
+/**        *****        **      *****   /**        *****   /**
+/**       **///**      **      **///**  /**       **///**  /*********
+/**      /*******     **      /**  //   /**      /*******  ////////**
+/**      /**////     **       /**   **  /**      /**////          /**
+/********//******   ********  //*****   /********//******   ********
+////////  //////   ////////    /////    ////////  //////   ////////
+figlet -c -t -W -w 135 -f slant 'Container edition'
+"
+neofetch | lolcat ;printf \$bootTimeDuration ms overall zsh start up time; free -m -h
+
+EOF
+
+    # Set up the zshrc file.
+    msg_ok "Set up zshrc"
+
+    msg_ok "Customized $HOST successfully"
+    echo "export TERM='xterm-256color'" >>/root/.bashrc
+    echo "export TERM='xterm-256color'" >>/root/.zshrc
+    neofetch --stdout >>/etc/motd
+    echo -e "'Le Z c est Le S'" >/etc/motd
+    echo -e "zshmeta - Le Z c\'est le S..." >/etc/issue
+    msg_ok "zshmeta - Le Z c\'est le S..."
+    msg_ok "Soon to be ready..."
+    }
+
+
+
+##########################################################################################################################################################
+
+install_container_service() {
+    # Determine the service type directly from the extras variable
+    service_type="$extras"
+
+    # Install the required packages based on the OS type
+    if [[ "$OS_TYPE" == "alpine" ]]; then
+      if [[ "$service_type" == "podman" ]]; then
+        apk update
+        apk add podman podman-docker podman-compose podman-openrc podman-bash-completion podman-zsh-completion podman-docker
+      elif [[ "$service_type" == "docker" ]]; then
+        apk update
+        apk add docker docker-openrc docker-compose docker-bash-completion docker-zsh-completion
+      fi
+      if [[ "$service_type" == "podman" ]]; then
+        rc-service cgroups start
+        rc-service podman start
+        rc-update add podman default
+      elif [[ "$service_type" == "docker" ]]; then
+        rc-service docker start
+        rc-update add docker default
+      fi
+    elif [[ "$OS_TYPE" =~ ^(debian|ubuntu|centos|archlinux)$ ]]; then
+      case "$distro" in
+      debian | ubuntu)
+        apt update -y
+        apt install -y podman podman-docker podman-compose
+        ;;
+      centos)
+        yum update -y
+        yum upgrade -y
+        yum install -y podman podman-docker podman-compose
+        ;;
+      archlinux)
+        pacman -Syyuv --noconfirm
+        pacman -S --noconfirm podman podman-docker podman-compose
+        ;;
+      *)
+        error_handler "${LINENO}" "Unsupported distro: $distro"
+        ;;
+      esac
+    fi
+    # Enable and start the service
+    if [[ "$service_type" == "podman" ]]; then
+      systemctl enable --now podman
+    elif [[ "$service_type" == "docker" ]]; then
+      systemctl enable --now docker
+    fi
+
+    # Additional configurations for Podman
+    if [[ "$service_type" == "podman" ]]; then
+      mkdir -p /root/.config/containers
+      echo -e 'unqualified-search-registries=["docker.io", "quay.io", "ghcr.io"]' >>/etc/containers/registries.conf
+      echo -e '[storage]\n\ndriver="vfs"\nrunroot="/run/user/1000/container/"\ngraphRoot="/var/lib/containers/storage"' >/etc/containers/storage.conf
+      echo -e '[storage]\n\ndriver="vfs"\nrunroot="/run/user/1000/container/"\ngraphRoot="/var/lib/containers/storage"' >/root/.config/containers/storage.conf
+    fi
+    msg_ok "Installed $service_type"
+  }
+
+  #########################################################################################################################################################
+
+
+container_install() {
+    # 1. Check if /root/$hostname directory exists
+    if [ ! -d "/root/$hostname" ]; then
+      docker pull "$template" -t "myimage"
+      msg_ok "Pulled image from docker Hub using template: $template"
+    else
+      cd "/root/$hostname" || return
+
+      # 2. Check for docker-compose or dockerfile
+      if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
+        docker-compose pull
+
+        msg_ok "Pulled or built images using docker-compose"
+      elif [ -f dockerfile ]; then
+        docker build -t "$hostname" .
+        msg_ok "Built image from dockerfile"
+      else
+        msg_info "Couldn't find a file for $template"
+        msg_info "Falling back to the Hub or Fleet"
+        template_options=("docker_hub_images" "docker_fleet_images")
+        template=$(printf '%s\n' "${template_options[@]}" | fzf --header 'Pick an Image from the Hub or the Fleet' --cycle --height 50 --border --ansi)
+        template=$(echo "$template" | fzf --header 'Pick an Image' --cycle --height 50 --border --ansi)
+        docker pull "$template"
+        docker tag "$template" "$hostname"
+        msg_ok "Pulled image: $template"
+      fi
+    fi
+
+    # 3. Handle port mapping and run the containers
+    CONTAINER=$(docker create "$hostname")
+    PORTS=$(docker inspect "$hostname" | jq -r '.[0].Config.ExposedPorts | keys[]' | cut -d/ -f1)
+    PORT_OPTIONS=""
+    for PORT in $PORTS; do
+      PORT_OPTIONS="$PORT_OPTIONS -p $PORT:$PORT"
+    done
+
+    # 4. Provide feedback and run the containers
+    msg_info "Container is ready to be deployed"
+    msg_warn "Each port will be mapped to itself on the host"
+    docker run -d "$PORT_OPTIONS" "$CONTAINER"
+    if [ $? -eq 0 ]; then
+      msg_ok "Container is running"
+    else
+      msg_error "Container is not running"
+      msg_info "Inspect issues and try again"
+      msg_info "docker run -d -p $PORTS:$PORTS $CONTAINER"
+    fi
+}
+
+  ##########################################################################################################################################################
+
+  msg_info "Setting up the system"
+  system_setup
+  msg_ok "System set"
+  msg_info "Setting up the network"
+  ensure_network
+  msg_ok "Network set"
+  if [ -n "$APPS" ]; then
+  msg_info "Installing $APPS"
+  $APPS
+  msg_ok "$APPS installation complete"
+  fi
+  msg_info "Customizing the system"
+  customize
+  msg_ok "System customized"
+
+
+##########################################################################################################################################################
+  if [ "$extras" != "" ]; then
+  msg_info "Installing $extras"
+    install_container_service
+  elif [ "$CT_TYPE" == "docker" ]; then
+    install_container_service
+    container_install
+  fi
+
+
+
+##########################################################################################################################################################
+
+
+
+  msg_info  "Container $hostname $CTID Ready"
+
+
+}
+##########################################################################################################################################################
+
+####################################################################Install Container: Start and run Funcs#########################################################################################
+
+figlet -t -c -W -w 187 -f term "DoxiMoxi"  | lolcat
+figlet -t -c -W -w 187 -f term "Setting up $hostname $CTID could take a bit of time" | lolcat
+figlet -t -c -W -w 187 -f term "by zshmeta - Le Z c le S" | lolcat
+
+#if os_type alpine then install bash
+if [ "$OS_TYPE" == "alpine" ]; then
+  msg_info "Installing bash"
+  pct exec "$CTID" -- sh -c 'echo -e  "https://dl-cdn.alpinelinux.org/alpine/edge/main\nhttps://dl-cdn.alpinelinux.org/alpine/edge/community\nhttps://dl-cdn.alpinelinux.org/alpine/edge/testing" > /etc/apk/repositories'
+  pct exec "$CTID" -- apk update
+  pct exec "$CTID" -- apk add bash
+  msg_ok "Installed bash"
+fi
+
+
+msg_info "Setting up $hostname $CTID" | lolcat
+msg_info "Executing doxmox inside" | lolcat
+declarevars+="hostname='$hostname'; "
+declarevars+="OS_TYPE='$OS_TYPE'; "
+declarevars+="extras='$extras'; "
+declarevars+="CT_TYPE='$CT_TYPE'; "
+declarevars+="template='$template'; "
+declarevars+="PASSWORD='$PASSWORD'; "
+declarevars+="TSKEY_EPHEMERAL='$TSKEY_EPHEMERAL'; "
+declarevars+="APPS='$APPS'; "
+declarevars+="VERB='$VERB' "
+
+msg_info "declaring functions" | lolcat
+
+if [ -n "$APPS" ]; then
+declaration+="$(declare -f "$APPS"); "
+declaration+="$(declare -f doxymoxy); "
+else
+declaration="$(declare -f doxymoxy); "
+fi
+
+msg_info "Executing doxmox inside" | lolcat
+
+if [ "$VERB" == "true" ]; then
+pct exec "$CTID" -- bash -c "$declaration $declarevars; set -x; doxymoxy"
+else
+pct exec "$CTID" -- bash -c "$declaration $declarevars; doxymoxy"
+fi
+
+msg_info "Finishing up $hostname $CTID" | lolcat
+
+CTID_CONFIG_PATH=/etc/pve/lxc/${CTID}.conf
+cat <<EOF >>"$CTID_CONFIG_PATH"
+lxc.cgroup2.devices.allow: c 10:200 rwm
+lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file
+EOF
+pct push "$CTID" ~/.ssh/authorized_keys /root/.ssh/authorized_keys
+pct exec "$CTID" -- bash -c "$(curl -fsSL https://tailscale.com/install.sh)"
+
+if [ "$OS_TYPE" == "alpine" ]; then
+    pct exec "$CTID" -- rc-update add tailscale
+    pct exec "$CTID" -- rc-service tailscale start
+else
+pct exec "$CTID" -- systemctl enable --now tailscaled
+fi
+
+msg_info "Rebooting Container" | lolcat
+
+pct reboot "$CTID"
+pct exec "$CTID" -- bash -c "tailscale up --authkey tskey-auth-kvnEto1CNTRL-xMZnuyazvcJmFZQyWPurcJLLprTT7KCBf"
+
+
+#########################################################End of Script###############################################################################################################
+
+msg_info "Gathering infos on $hostname $CTID" | lolcat
+TS_IP="$(pct exec "$CTID" -- bash -c "tailscale ip -4 ")"
+IP=$(pct exec "$CTID" ip a s dev eth0 | awk '/inet / {print $2}' | cut -d/ -f1)
+
+# a fancy message giving the name ip config and other infos on the created container
+
+
+msg_info "Your Container's ready to rap'n roll!" | lolcat
+
+if [ -n "$APPS" ]; then
+  toilet --metal --termwidth  --font pagga  "Visit $APPS at '$APPS'port"
+fi
+msg_info "get in the container with pct enter $CTID or through ssh root@$IP or root@$TS_IP" | lolcat
+OS_ICON="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/$OS_TYPE.svg"
+APP_ICON="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/$APPS.svg"
+
+# a fancy message giving the name ip config and other infos on the created container
+pct set "$CTID" --description "# $hostname\n**created with the help of zshmeta ** \n\n
+                                 # \Host IP: $IP \ \n
+                                 # \Tailscale IP: $TS_IP  \ \n
+                                 # \[App Icon]($APP_ICON){: width='33.33%'} \ \n
+                                 # \[OS Type]($OS_ICON){: width='33.33%'} \ \n
+                                 # \[User Avatar]($USER_AVATAR_URL){: width='33.33%'} \ \n
+                                 # \### Installed Apps: $APPS "
+
+msg_info "Container $hostname $CTID Created with ip \"$IP\" and Tailscale '$TS_IP'" | lolcat
+msg_info "get in the container with pct enter $CTID or through ssh root@$IP or root@$TS_IP" | lolcat
+toilet  --termwidth --font pagga "                  Container $hostname $CTID Created"  | lolcat
+toilet  --termwidth --font pagga "                      ip: '$IP'" | lolcat
+toilet  --termwidth --font pagga "                  Tailscale"  | lolcat
+toilet  --termwidth --font pagga "                      ip: '$TS_IP'" | lolcat
+toilet  --termwidth --font pagga "                     $OS_TYPE $hostname $APPS $extras" | lolcat
+
+toilet  --termwidth --font pagga "                           ------------" | lolcat
+toilet -F metal --termwidth  --font pagga "                         ...By Zshmeta" | lolcat
+     
