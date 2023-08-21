@@ -1,0 +1,42 @@
+
+###############################################################################################
+
+wireguard() {
+banlet wireguard 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y gunicorn
+msg_ok "Installed Dependencies"
+
+msg_info "Installing WireGuard (using pivpn.io)"
+OPTIONS_PATH='/options.conf'
+cat >$OPTIONS_PATH <<'EOF'
+IPv4dev=eth0
+install_user=root
+VPN=wireguard
+pivpnNET=10.6.0.0
+subnetClass=24
+ALLOWED_IPS="0.0.0.0/0, ::0/0"
+pivpnMTU=1420
+pivpnPORT=51820
+pivpnDNS1=1.1.1.1
+pivpnDNS2=8.8.8.8
+pivpnHOST=
+pivpnPERSISTENTKEEPALIVE=25
+UNATTUPG=1
+EOF
+bash <(curl -fsSL https://install.pivpn.io) --unattended options.conf
+msg_ok "Installed WireGuard"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

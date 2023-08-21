@@ -1,0 +1,36 @@
+
+###############################################################################################
+
+syncthing() {
+banlet syncthing 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y gnupg
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Syncthing"
+curl -s -o /usr/share/keyrings/syncthing-archive-keyring.gpg https://syncthing.net/release-key.gpg
+sh -c 'echo "deb [signed-by=/usr/share/keyrings/syncthing-archive-keyring.gpg] https://apt.syncthing.net/ syncthing stable" > /etc/apt/sources.list.d/syncthing.list'
+apt-get update
+apt-get install -y syncthing
+systemctl enable syncthing@root.service
+systemctl start syncthing@root.service
+sleep 5
+sed -i "{s/127.0.0.1:8384/0.0.0.0:8384/g}" /root/.config/syncthing/config.xml
+systemctl restart syncthing@root.service
+msg_ok "Installed Syncthing"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet syncthing
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

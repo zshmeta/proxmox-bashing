@@ -1,0 +1,51 @@
+
+###############################################################################################
+
+radarr() {
+banlet radarr 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y sqlite3
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Radarr"
+mkdir -p /var/lib/radarr/
+chmod 775 /var/lib/radarr/
+wget --content-disposition 'https://radarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=x64'
+tar -xvzf Radarr.master.*.tar.gz
+mv Radarr /opt
+chmod 775 /opt/Radarr
+msg_ok "Installed Radarr"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/radarr.service
+[Unit]
+Description=Radarr Daemon
+After=syslog.target network.target
+[Service]
+UMask=0002
+Type=simple
+ExecStart=/opt/Radarr/Radarr -nobrowser -data=/var/lib/radarr/
+TimeoutStopSec=20
+KillMode=process
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl -q daemon-reload
+systemctl enable --now -q radarr
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+rm -rf Radarr.master.*.tar.gz
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

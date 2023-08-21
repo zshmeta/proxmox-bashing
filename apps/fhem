@@ -1,0 +1,35 @@
+
+###############################################################################################
+
+fhem() {
+banlet fhem 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y avahi-daemon
+apt-get install -y gnupg2
+msg_ok "Installed Dependencies"
+
+msg_info "Setting up Fhem Repository"
+curl -sSf https://debian.fhem.de/archive.key | gpg --dearmor >/etc/apt/trusted.gpg.d/debianfhemde-archive-keyring.gpg
+echo 'deb [signed-by=/etc/apt/trusted.gpg.d/debianfhemde-archive-keyring.gpg] https://debian.fhem.de/nightly/ /' >/etc/apt/sources.list.d/fhem.list
+msg_ok "Set up Fhem Repository"
+
+msg_info "Installing Fhem"
+apt-get update
+apt-get install -y fhem
+msg_info "Installed Fhem"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet fhem
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

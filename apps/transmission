@@ -1,0 +1,31 @@
+
+###############################################################################################
+
+transmission() {
+banlet transmission 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+
+msg_info "Installing Transmission"
+apt-get install -y transmission-daemon
+systemctl stop transmission-daemon
+sed -i '{s/"rpc-whitelist-enabled": true/"rpc-whitelist-enabled": false/g; s/"rpc-host-whitelist-enabled": true,/"rpc-host-whitelist-enabled": false,/g}' /etc/transmission-daemon/settings.json
+systemctl start transmission-daemon
+msg_ok "Installed Transmission"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet transmission
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

@@ -1,0 +1,51 @@
+
+###############################################################################################
+
+prowlarr() {
+banlet prowlarr 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y sqlite3
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Prowlarr"
+mkdir -p /var/lib/prowlarr/
+chmod 775 /var/lib/prowlarr/
+wget --content-disposition 'https://prowlarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=x64'
+tar -xvzf Prowlarr.master.*.tar.gz
+mv Prowlarr /opt
+chmod 775 /opt/Prowlarr
+msg_ok "Installed Prowlarr"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/prowlarr.service
+[Unit]
+Description=Prowlarr Daemon
+After=syslog.target network.target
+[Service]
+UMask=0002
+Type=simple
+ExecStart=/opt/Prowlarr/Prowlarr -nobrowser -data=/var/lib/prowlarr/
+TimeoutStopSec=20
+KillMode=process
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl -q daemon-reload
+systemctl enable --now -q prowlarr
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+rm -rf Prowlarr.master.*.tar.gz
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

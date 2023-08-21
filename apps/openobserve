@@ -1,0 +1,55 @@
+
+###############################################################################################
+
+openobserve() {
+banlet openobserve 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+msg_info "Installing OpenObserve"
+mkdir -p /opt/openobserve/data
+LATEST=$(curl -sL https://api.github.com/repos/openobserve/openobserve/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
+tar zxvf <(curl -fsSL https://github.com/openobserve/openobserve/releases/download/$LATEST/openobserve-${LATEST}-linux-amd64.tar.gz) -C /opt/openobserve
+
+cat <<EOF >/opt/openobserve/data/.env
+ZO_ROOT_USER_EMAIL = "admin@example.com"
+ZO_ROOT_USER_PASSWORD = "$(openssl rand -base64 18 | cut -c1-13)"
+ZO_DATA_DIR = "/opt/openobserve/data"
+ZO_HTTP_PORT = "5080"
+EOF
+msg_ok "Installed OpenObserve"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/openobserve.service
+[Unit]
+Description=OpenObserve
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/openobserve/data/.env
+ExecStart=/opt/openobserve/openobserve
+ExecStop=killall -QUIT openobserve
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable -q --now openobserve
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet openobserve
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

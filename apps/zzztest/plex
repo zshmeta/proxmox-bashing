@@ -1,0 +1,47 @@
+
+###############################################################################################
+
+plex() {
+banlet plex 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+if [[ "$CTTYPE" == "0" ]]; then
+  msg_info "Setting Up Hardware Acceleration"
+  apt-get -y install \
+    va-driver-all \
+    ocl-icd-libopencl1 
+  if [[ ${PCT_OSVERSION} == "20.04" ]]; then 
+  apt-get install -y beignet-opencl-icd
+  else
+  apt-get install -y intel-opencl-icd
+  fi
+  /bin/chgrp video /dev/dri
+  /bin/chmod 755 /dev/dri
+  /bin/chmod 660 /dev/dri/*
+  msg_ok "Set Up Hardware Acceleration"
+fi
+
+msg_info "Setting Up Plex Media Server Repository"
+wget -qO- https://downloads.plex.tv/plex-keys/PlexSign.key >/etc/apt/trusted.gpg.d/PlexSign.asc
+echo "deb [arch=$(dpkg --print-architecture)] https://downloads.plex.tv/repo/deb/ public main" >/etc/apt/sources.list.d/plexmediaserver.list
+msg_ok "Set Up Plex Media Server Repository"
+
+msg_info "Installing Plex Media Server"
+apt-get update
+apt-get -o Dpkg::Options::="--force-confold" install -y plexmediaserver
+msg_ok "Installed Plex Media Server"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

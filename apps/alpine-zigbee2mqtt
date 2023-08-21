@@ -1,0 +1,22 @@
+
+###############################################################################################
+
+alpine-zigbee2mqtt() {
+banlet alpine-zigbee2mqtt 
+
+msg_info "Installing Dependencies"
+apk add newt
+apk add curl
+apk add openssh
+apk add nano
+apk add mc
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Alpine-Zigbee2MQTT"
+apk add zigbee2mqtt
+msg_ok "Installed Alpine-Zigbee2MQTT"
+
+}
+
+############################################################################################
+

@@ -1,0 +1,58 @@
+
+###############################################################################################
+
+zoraxy() {
+banlet zoraxy 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y git
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Golang"
+set +o pipefail
+RELEASE=$(curl -s https://go.dev/dl/ | grep -o "go.*\linux-amd64.tar.gz" | head -n 1)
+wget -q https://golang.org/dl/$RELEASE
+tar -xzf $RELEASE -C /usr/local
+ln -s /usr/local/go/bin/go /usr/local/bin/go
+set -o pipefail
+msg_ok "Installed Golang"
+
+msg_info "Installing Zoraxy (Patience)"
+git clone https://github.com/tobychui/zoraxy /opt/zoraxy
+cd /opt/zoraxy/src
+go mod tidy
+go build
+msg_ok "Installed Zoraxy"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/zoraxy.service
+[Unit]
+Description=General purpose request proxy and forwarding tool
+After=syslog.target network-online.target
+
+[Service]
+ExecStart=/opt/zoraxy/src/./zoraxy
+WorkingDirectory=/opt/zoraxy/src/
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable -q --now zoraxy.service
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+rm -rf $RELEASE
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet zoraxy
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

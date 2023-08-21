@@ -1,0 +1,53 @@
+
+###############################################################################################
+
+lidarr() {
+banlet lidarr 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y sqlite3
+apt-get install -y libchromaprint-tools
+apt-get install -y mediainfo
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Lidarr"
+mkdir -p /var/lib/lidarr/
+chmod 775 /var/lib/lidarr/
+wget --content-disposition 'https://lidarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=x64'
+tar -xvzf Lidarr.master.*.tar.gz
+mv Lidarr /opt
+chmod 775 /opt/Lidarr
+msg_ok "Installed Lidarr"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/lidarr.service
+[Unit]
+Description=Lidarr Daemon
+After=syslog.target network.target
+[Service]
+UMask=0002
+Type=simple
+ExecStart=/opt/Lidarr/Lidarr -nobrowser -data=/var/lib/lidarr/
+TimeoutStopSec=20
+KillMode=process
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl -q daemon-reload
+systemctl enable --now -q lidarr
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+rm -rf Lidarr.master.*.tar.gz
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

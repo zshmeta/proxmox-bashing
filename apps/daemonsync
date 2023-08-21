@@ -1,0 +1,30 @@
+
+###############################################################################################
+
+daemonsync() {
+banlet daemonsync 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y g++-multilib
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Daemon Sync Server"
+wget -qL https://github.com/tteck/Proxmox/raw/main/misc/daemonsync_2.2.0.0059_amd64.deb
+dpkg -i daemonsync_2.2.0.0059_amd64.deb
+msg_ok "Installed Daemon Sync Server"
+
+
+msg_info "Cleaning up"
+rm -rf daemonsync_2.2.0.0059_amd64.deb
+apt-get autoremove >/dev/null
+apt-get autoclean >/dev/null
+msg_ok "Cleaned"
+banlet daemonsync
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

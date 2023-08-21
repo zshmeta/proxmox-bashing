@@ -1,0 +1,58 @@
+
+###############################################################################################
+
+influxdb() {
+banlet influxdb 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y lsb-base
+apt-get install -y lsb-release
+apt-get install -y gnupg2
+msg_ok "Installed Dependencies"
+
+msg_info "Setting up InfluxDB Repository"
+wget -q https://repos.influxdata.com/influxdata-archive_compat.key
+cat influxdata-archive_compat.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg > /dev/null
+sh -c 'echo "deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg] https://repos.influxdata.com/debian stable main" > /etc/apt/sources.list.d/influxdata.list'
+msg_ok "Set up InfluxDB Repository"
+
+read -r -p "Which version of InfluxDB to install? (1 or 2) " prompt
+if [[ $prompt == "2" ]]; then
+  INFLUX="2"
+else
+  INFLUX="1"
+fi
+
+msg_info "Installing InfluxDB"
+apt-get update
+if [[ $INFLUX == "2" ]]; then
+  apt-get install -y influxdb2
+else
+  apt-get install -y influxdb
+  wget -q https://dl.influxdata.com/chronograf/releases/chronograf_1.10.1_amd64.deb
+  dpkg -i chronograf_1.10.1_amd64.deb
+fi
+systemctl enable --now influxdb
+msg_ok "Installed InfluxDB"
+
+read -r -p "Would you like to add Telegraf? <y/N> " prompt
+if [[ "${prompt,,}" =~ ^(y|yes)$ ]]; then
+  msg_info "Installing Telegraf"
+  apt-get install -y telegraf
+  msg_ok "Installed Telegraf"
+fi
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet influxdb
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

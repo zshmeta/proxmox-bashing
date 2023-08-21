@@ -1,0 +1,47 @@
+
+###############################################################################################
+
+jackett() {
+banlet jackett 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Jackett"
+RELEASE=$(wget -q https://github.com/Jackett/Jackett/releases/latest -O - | grep "title>Release" | cut -d " " -f 4)
+wget -q https://github.com/Jackett/Jackett/releases/download/$RELEASE/Jackett.Binaries.LinuxAMDx64.tar.gz
+tar -xzf Jackett.Binaries.LinuxAMDx64.tar.gz -C /opt
+rm -rf Jackett.Binaries.LinuxAMDx64.tar.gz
+msg_ok "Installed Jackett"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/jackett.service
+[Unit]
+Description=Jackett Daemon
+After=network.target
+[Service]
+SyslogIdentifier=jackett
+Restart=always
+RestartSec=5
+Type=simple
+WorkingDirectory=/opt/Jackett
+ExecStart=/bin/sh /opt/Jackett/jackett_launcher.sh
+TimeoutStopSec=30
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable -q --now jackett.service
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

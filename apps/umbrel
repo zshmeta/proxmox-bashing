@@ -1,0 +1,41 @@
+
+###############################################################################################
+
+umbrel() {
+banlet umbrel 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Umbrel (Patience)"
+DOCKER_CONFIG_PATH='/etc/docker/daemon.json'
+mkdir -p $(dirname $DOCKER_CONFIG_PATH)
+if [ "$ST" == "yes" ]; then
+VER=$(curl -s https://api.github.com/repos/containers/fuse-overlayfs/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3) }')
+cd /usr/local/bin
+curl -sSL -o fuse-overlayfs https://github.com/containers/fuse-overlayfs/releases/download/$VER/fuse-overlayfs-x86_64
+chmod 755 /usr/local/bin/fuse-overlayfs
+cd ~
+echo -e '{\n  "storage-driver": "fuse-overlayfs",\n  "log-driver": "journald"\n}' > /etc/docker/daemon.json
+else
+echo -e '{\n  "log-driver": "journald"\n}' > /etc/docker/daemon.json
+fi
+bash <(curl -fsSL https://umbrel)
+systemctl daemon-reload
+systemctl enable --now umbrel-startup.service
+msg_ok "Installed Umbrel"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet umbrel
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

@@ -1,0 +1,47 @@
+
+###############################################################################################
+
+kavita() {
+banlet kavita 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Kavita"
+cd /opt
+RELEASE=$(curl -s https://api.github.com/repos/Kareadita/Kavita/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3) }')
+tar -xvzf <(curl -fsSL https://github.com/Kareadita/Kavita/releases/download/$RELEASE/kavita-linux-x64.tar.gz) --no-same-owner
+msg_ok "Installed Kavita"
+
+msg_info "Creating Service"
+service_path="/etc/systemd/system/kavita.service"
+echo "[Unit]
+Description=Kavita Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/Kavita
+ExecStart=/opt/Kavita/Kavita
+TimeoutStopSec=20
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target" >$service_path
+chmod +x /opt/Kavita/* && chown root /opt/Kavita/*
+systemctl enable --now -q kavita.service
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

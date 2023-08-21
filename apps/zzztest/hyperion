@@ -1,0 +1,32 @@
+
+###############################################################################################
+
+hyperion() {
+banlet hyperion 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y lsb-release
+apt-get install -y gpg
+apt-get install -y apt-transport-https
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Hyperion"
+wget -qO- https://apt.hyperion-project.org/hyperion.pub.key | gpg --dearmor -o /usr/share/keyrings/hyperion.pub.gpg
+sh -c 'echo "deb [signed-by=/usr/share/keyrings/hyperion.pub.gpg] https://apt.hyperion-project.org/ $(lsb_release -cs) main" > /etc/apt/sources.list.d/hyperion.list'
+apt-get update
+apt-get install -y hyperion
+systemctl enable --now hyperion@root.service
+msg_ok "Installed Hyperion"
+
+
+msg_info "Cleaning up"
+apt-get autoremove >/dev/null
+apt-get autoclean >/dev/null
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

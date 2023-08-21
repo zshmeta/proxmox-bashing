@@ -1,0 +1,27 @@
+
+###############################################################################################
+
+iobroker() {
+banlet iobroker 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+msg_info "Installing ioBroker (Patience)"
+bash <(curl -fsSL https://iobroker.net/install.sh)
+msg_ok "Installed ioBroker"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet iobroker
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

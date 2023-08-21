@@ -1,0 +1,45 @@
+
+###############################################################################################
+
+emby() {
+banlet emby 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+if [[ "$CTTYPE" == "0" ]]; then
+  msg_info "Setting Up Hardware Acceleration"
+  apt-get -y install \
+    va-driver-all \
+    ocl-icd-libopencl1
+  if [[ ${PCT_OSVERSION} == "20.04" ]]; then 
+  apt-get install -y beignet-opencl-icd
+  else
+  apt-get install -y intel-opencl-icd
+  fi
+  /bin/chgrp video /dev/dri
+  /bin/chmod 755 /dev/dri
+  /bin/chmod 660 /dev/dri/*
+  msg_ok "Set Up Hardware Acceleration"
+fi
+
+LATEST=$(curl -sL https://api.github.com/repos/MediaBrowser/Emby.Releases/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
+
+msg_info "Installing Emby"
+wget -q https://github.com/MediaBrowser/Emby.Releases/releases/download/${LATEST}/emby-server-deb_${LATEST}_amd64.deb
+dpkg -i emby-server-deb_${LATEST}_amd64.deb
+msg_ok "Installed Emby"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+rm emby-server-deb_${LATEST}_amd64.deb
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

@@ -1,0 +1,64 @@
+
+###############################################################################################
+
+grocy() {
+banlet grocy 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y apt-transport-https
+msg_ok "Installed Dependencies"
+
+msg_info "Installing PHP 8.1"
+VERSION="$(awk -F'=' '/^VERSION_CODENAME=/{ print $NF }' /etc/os-release)"
+curl -sSLo /usr/share/keyrings/deb.sury.org-php.gpg https://packages.sury.org/php/apt.gpg
+echo -e "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ $VERSION main" >/etc/apt/sources.list.d/php.list
+apt-get update
+apt-get install -y php8.1
+apt-get install -y libapache2-mod-php8.1
+apt-get install -y php8.1-sqlite3
+apt-get install -y php8.1-gd
+apt-get install -y php8.1-intl
+apt-get install -y php8.1-mbstring
+msg_ok "Installed PHP 8.1"
+
+msg_info "Installing grocy"
+latest=$(curl -s https://api.github.com/repos/grocy/grocy/releases/latest | grep "tag_name" | awk '{print substr($2, 3, length($2)-4) }')
+wget -q https://github.com/grocy/grocy/releases/download/v${latest}/grocy_${latest}.zip
+unzip grocy_${latest}.zip -d /var/www/html
+chown -R www-data:www-data /var/www/html
+cp /var/www/html/config-dist.php /var/www/html/data/config.php
+chmod +x /var/www/html/update.sh
+
+cat <<EOF >/etc/apache2/sites-available/grocy.conf
+<VirtualHost *:80>
+  ServerAdmin webmaster@localhost
+  DocumentRoot /var/www/html/public
+  ErrorLog /var/log/apache2/error.log
+<Directory /var/www/html/public>
+  Options Indexes FollowSymLinks MultiViews
+  AllowOverride All
+  Order allow,deny
+  allow from all
+</Directory>
+</VirtualHost>
+EOF
+
+a2dissite 000-default.conf
+a2ensite grocy.conf
+a2enmod rewrite
+systemctl reload apache2
+msg_ok "Installed grocy"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+rm -rf /root/grocy_${latest}.zip
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

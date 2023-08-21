@@ -1,0 +1,53 @@
+
+###############################################################################################
+
+whisparr() {
+banlet whisparr 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y sqlite3 
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Whisparr"
+mkdir -p /var/lib/whisparr/
+chmod 775 /var/lib/whisparr/
+wget --content-disposition 'https://whisparr.servarr.com/v1/update/nightly/updatefile?os=linux&runtime=netcore&arch=x64'
+tar -xvzf Whisparr.develop.*.tar.gz
+mv Whisparr /opt
+chmod 775 /opt/Whisparr
+msg_ok "Installed Whisparr"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/whisparr.service
+[Unit]
+Description=whisparr Daemon
+After=syslog.target network.target
+[Service]
+UMask=0002
+Type=simple
+ExecStart=/opt/Whisparr/Whisparr -nobrowser -data=/var/lib/whisparr/
+TimeoutStopSec=20
+KillMode=process
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl -q daemon-reload
+systemctl enable --now -q whisparr
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+rm -rf Whisparr.develop.*.tar.gz
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet whisparr
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

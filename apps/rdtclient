@@ -1,0 +1,58 @@
+
+###############################################################################################
+
+rdtclient() {
+banlet rdtclient 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y unzip
+msg_ok "Installed Dependencies"
+
+msg_info "Installing ASP.NET Core Runtime"
+wget -q https://packages.microsoft.com/config/debian/11/packages-microsoft-prod.deb
+dpkg -i packages-microsoft-prod.deb
+rm packages-microsoft-prod.deb
+apt-get update
+apt-get install -y dotnet-sdk-6.0
+msg_ok "Installed ASP.NET Core Runtime"
+
+msg_info "Installing rdtclient"
+wget -q https://github.com/rogerfar/rdt-client/releases/latest/download/RealDebridClient.zip
+unzip -qq RealDebridClient.zip -d /opt/rdtc
+rm RealDebridClient.zip
+cd /opt/rdtc
+mkdir -p data/db/ data/downloads
+sed -i 's#/data/db/#/opt/rdtc&#g' /opt/rdtc/appsettings.json
+msg_ok "Installed rdtclient"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/rdtc.service
+[Unit]
+Description=RdtClient Service
+
+[Service]
+WorkingDirectory=/opt/rdtc
+ExecStart=/usr/bin/dotnet RdtClient.Web.dll
+SyslogIdentifier=RdtClient
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable -q --now rdtc
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet rdtclient
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

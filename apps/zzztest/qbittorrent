@@ -1,0 +1,39 @@
+
+###############################################################################################
+
+qbittorrent() {
+banlet qbittorrent 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+msg_info "Installing qbittorrent-nox"
+apt-get install -y qbittorrent-nox
+msg_ok "qbittorrent-nox"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/qbittorrent-nox.service
+[Unit]
+Description=qBittorrent client
+After=network.target
+[Service]
+ExecStart=/usr/bin/qbittorrent-nox --webui-port=8090
+Restart=always
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable -q --now qbittorrent-nox
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

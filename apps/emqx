@@ -1,0 +1,29 @@
+
+###############################################################################################
+
+emqx() {
+banlet emqx 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+msg_info "Installing EMQX"
+bash <(curl -fsSL https://packagecloud.io/install/repositories/emqx/emqx/script.deb.sh)
+apt-get install -y emqx
+systemctl enable --now emqx
+msg_ok "Installed EMQX"
+
+
+msg_info "Cleaning up"
+apt-get autoremove >/dev/null
+apt-get autoclean >/dev/null
+msg_ok "Cleaned"
+banlet emqx
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

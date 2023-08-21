@@ -1,0 +1,25 @@
+#compdef doxmox
+
+_doxmox() {
+    local -a commands
+    local curcontext="$curcontext" state line
+
+    typeset -A opt_args
+
+    _arguments \
+        '1: :->level1' \
+        '*:: :->level2'
+
+    case $state in
+        level1)
+            commands=('almalinux' 'centos' 'debian' 'alpine' 'ubuntu' 'archlinux' 'rockylinux' 'opensuse' 'devuan' 'fedora')
+            _describe 'command' commands
+            ;;
+        level2)
+            commands=('adguard' 'alpine-docker' 'alpine-grafana' 'alpine-vaultwarden' 'alpine-zigbee2mqtt' 'audiobookshelf' 'autobrr' 'bazarr' 'blocky' 'casaos' 'changedetection' 'cloudflared' 'cronicle' 'daemonsync' 'dashy' 'deconz' 'deluge' 'docker' 'emby' 'emqx' 'esphome' 'fhem' 'go2rtc' 'grafana' 'grocy' 'heimdalldashboard' 'homeassistant-core' 'homeassistant' 'homebridge' 'homer' 'hyperion' 'influxdb' 'iobroker' 'jackett' 'jellyfin' 'jellyseerr' 'k0s' 'kavita' 'keycloak' 'lidarr' 'magicmirror' 'mariadb' 'meshcentral' 'motioneye' 'mqtt' 'n8n' 'navidrome' 'nginxproxymanager' 'nocodb' 'node-red' 'octoprint' 'ombi' 'omv' 'omada' 'openhab' 'openobserve' 'overseerr-install' 'overseerr' 'paperless-ngx' 'photoprism' 'pihole' 'plex' 'podman-homeassistant' 'podman' 'postgresql' 'prometheus' 'prowlarr' 'qbittorrent' 'radarr' 'rdtclient' 'readarr' 'rockylinux' 'rtsptoweb' 'sabnzbd' 'scrypted' 'shinobi' 'sonarr' 'syncthing' 'tautulli' 'tdarr' 'technitiumdns' 'transmission' 'trilium' 'ubiquiti' 'ubuntu' 'umbrel' 'unifi' 'uptimekuma' 'vaultwarden' 'whisparr' 'whoogle' 'wikijs' 'wireguard' 'yunohost' 'zigbee2mqtt' 'zoraxy' 'zwave-js-ui')
+            _describe 'command' commands
+            ;;
+    esac
+}
+
+_doxmox

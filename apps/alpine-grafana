@@ -1,0 +1,25 @@
+
+###############################################################################################
+
+alpine-grafana() {
+banlet alpine-grafana 
+
+msg_info "Installing Dependencies"
+apk add newt
+apk add curl
+apk add openssh
+apk add nano
+apk add mc
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Grafana"
+apk add grafana
+sed -i '/http_addr/s/127.0.0.1/0.0.0.0/g' /etc/conf.d/grafana
+rc-service grafana start
+rc-update add grafana default
+msg_ok "Installed Grafana"
+
+}
+
+############################################################################################
+

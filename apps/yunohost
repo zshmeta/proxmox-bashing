@@ -1,0 +1,32 @@
+
+###############################################################################################
+
+yunohost() {
+banlet yunohost 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y gnupg
+apt-get install -y apt-transport-https
+apt-get install -y lsb-release
+apt-get install -y ca-certificates
+msg_ok "Installed Dependencies"
+
+msg_info "Installing YunoHost (Patience)"
+curl -sSLo /usr/share/keyrings/deb.sury.org-php.gpg https://packages.sury.org/php/apt.gpg
+bash <(curl -fsSL https://install.yunohost.org) -a
+msg_ok "Installed YunoHost"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet yunohost
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

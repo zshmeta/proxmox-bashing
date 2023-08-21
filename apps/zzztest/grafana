@@ -1,0 +1,36 @@
+
+###############################################################################################
+
+grafana() {
+banlet grafana 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y gnupg
+apt-get install -y apt-transport-https
+apt-get install -y software-properties-common
+msg_ok "Installed Dependencies"
+
+msg_info "Setting up Grafana Repository"
+wget -q -O /usr/share/keyrings/grafana.key https://apt.grafana.com/gpg.key
+sh -c 'echo "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main" > /etc/apt/sources.list.d/grafana.list'
+msg_ok "Set up Grafana Repository"
+
+msg_info "Installing Grafana"
+apt-get update
+apt-get install -y grafana
+systemctl start grafana-server
+systemctl enable --now -q grafana-server.service
+msg_ok "Installed Grafana"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

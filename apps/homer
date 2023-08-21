@@ -1,0 +1,48 @@
+
+###############################################################################################
+
+homer() {
+banlet homer 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y pip
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Homer"
+mkdir -p /opt/homer
+cd /opt/homer
+wget -q https://github.com/bastienwirtz/homer/releases/latest/download/homer.zip
+unzip homer.zip
+rm -rf homer.zip
+cp assets/config.yml.dist assets/config.yml
+msg_ok "Installed Homer"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/homer.service
+[Unit]
+Description=Homer Dashboard
+After=network-online.target
+[Service]
+Type=simple
+WorkingDirectory=/opt/homer
+ExecStart=python3 -m http.server 8010
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable --now homer
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet homer
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

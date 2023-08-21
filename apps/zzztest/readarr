@@ -1,0 +1,51 @@
+
+###############################################################################################
+
+readarr() {
+banlet readarr 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+apt-get install -y sqlite3
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Readarr"
+mkdir -p /var/lib/readarr/
+chmod 775 /var/lib/readarr/
+wget --content-disposition 'https://readarr.servarr.com/v1/update/develop/updatefile?os=linux&runtime=netcore&arch=x64'
+tar -xvzf Readarr.develop.*.tar.gz
+mv Readarr /opt
+chmod 775 /opt/Readarr
+msg_ok "Installed Readarr"
+
+msg_info "Creating Service"
+cat <<EOF >/etc/systemd/system/readarr.service
+[Unit]
+Description=Readarr Daemon
+After=syslog.target network.target
+[Service]
+UMask=0002
+Type=simple
+ExecStart=/opt/Readarr/Readarr -nobrowser -data=/var/lib/readarr/
+TimeoutStopSec=20
+KillMode=process
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl -q daemon-reload
+systemctl enable --now -q readarr
+msg_ok "Created Service"
+
+
+msg_info "Cleaning up"
+rm -rf Readarr.develop.*.tar.gz
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+}
+
+############################################################################################
+

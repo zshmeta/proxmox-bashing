@@ -1,0 +1,29 @@
+
+###############################################################################################
+
+podman() {
+banlet podman 
+
+msg_info "Installing Dependencies"
+apt-get install -y curl
+apt-get install -y sudo
+apt-get install -y mc
+msg_ok "Installed Dependencies"
+
+msg_info "Installing Podman"
+apt-get -y install podman
+systemctl enable --now podman.socket
+echo -e 'unqualified-search-registries=["docker.io"]' >> /etc/containers/registries.conf
+msg_ok "Installed Podman"
+
+
+msg_info "Cleaning up"
+apt-get autoremove
+apt-get autoclean
+msg_ok "Cleaned"
+banlet podman
+msg_ok "Cleaned"
+}
+
+############################################################################################
+
